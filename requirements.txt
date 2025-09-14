@@ -1,0 +1,7 @@
+crewai
+litellm
+python-dotenv
+requests
+flask
+markdown
+Pygments

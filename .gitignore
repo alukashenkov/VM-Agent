@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# VM-Agent logs directory and log files
+logs/
+vm_agent_log_at_*

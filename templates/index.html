@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vulners AI Agent</title>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .page-header {
+            max-width: none;
+            width: 100%;
+            margin: 0;
+            padding: 12px 16px 0 16px;
+        }
+
+        .split-container {
+            max-width: none;
+            width: 100%;
+            margin: 0;
+            padding: 12px 16px 16px 16px;
+            box-sizing: border-box;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: minmax(300px, 1fr) 6px minmax(320px, 2fr);
+            gap: 16px;
+        }
+
+        .panel {
+            background: white;
+            padding: 24px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            min-height: 0;
+            /* allow child to control overflow */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        #rightPanel {
+            max-width: none;
+            min-width: 320px;
+        }
+
+        #leftPanel {
+            overflow: auto;
+        }
+
+        /* Make agent output scrollable within the left panel */
+        #result {
+            flex: 1;
+            overflow: auto;
+            min-height: 0;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: inherit;
+            resize: vertical;
+        }
+
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+            color: #666;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border-left-color: #28a745;
+        }
+
+
+
+        /* Markdown rendering styles */
+        .markdown-content {
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3,
+        .markdown-content h4,
+        .markdown-content h5,
+        .markdown-content h6 {
+            color: #2c3e50;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+
+        .markdown-content h1 {
+            font-size: 1.8em;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 0.3em;
+        }
+
+        .markdown-content h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #bdc3c7;
+            padding-bottom: 0.2em;
+        }
+
+        .markdown-content h3 {
+            font-size: 1.3em;
+        }
+
+        .markdown-content h4 {
+            font-size: 1.1em;
+        }
+
+        .markdown-content p {
+            margin-bottom: 1em;
+            text-align: justify;
+        }
+
+        .markdown-content strong {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .markdown-content code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .markdown-content pre {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 15px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .markdown-content ul,
+        .markdown-content ol {
+            margin: 1em 0;
+            padding-left: 2em;
+        }
+
+        .markdown-content li {
+            margin-bottom: 0.5em;
+        }
+
+        .markdown-content blockquote {
+            border-left: 4px solid #3498db;
+            margin: 1em 0;
+            padding-left: 1em;
+            color: #7f8c8d;
+            font-style: italic;
+        }
+
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+
+        .markdown-content th,
+        .markdown-content td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .markdown-content th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .markdown-content tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        .timing-info {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 3px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .examples {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e7f3ff;
+            border-radius: 5px;
+        }
+
+        .examples h3 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+
+        .example-item {
+            margin: 5px 0;
+            padding: 5px;
+            background-color: white;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .example-item:hover {
+            background-color: #f0f8ff;
+        }
+
+        .section-divider {
+            margin: 30px 0;
+            border: none;
+            height: 2px;
+            background: linear-gradient(to right, transparent, #007bff, transparent);
+            border-radius: 1px;
+        }
+
+        /* Logs panel */
+        .logs-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .logs-box {
+            background: #0d1117;
+            color: #c9d1d9;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+            height: auto;
+            flex: 1;
+            overflow-x: auto;
+            overflow-y: auto;
+            padding: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 12.5px;
+            line-height: 1.5;
+            white-space: pre;
+        }
+
+        .logs-line {
+            white-space: pre-wrap;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #e9ecef;
+            color: #333;
+            font-size: 12px;
+        }
+
+        /* Splitter */
+        .divider {
+            width: 6px;
+            background: linear-gradient(180deg, #e9ecef, #cbd5e1);
+            border-radius: 3px;
+            cursor: col-resize;
+            user-select: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-header">
+        <h1>🔍 VM-Agent</h1>
+    </div>
+
+    <div class="split-container">
+        <div class="panel" id="leftPanel">
+
+            <div class="examples">
+                <h3>💡 Example Prompts:</h3>
+                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-7775')">
+                    <strong>Single CVE:</strong> Analyze CVE-2025-7775
+                </div>
+                <div class="example-item" onclick="setPrompt('Analyze CTX694938 and its security implications')">
+                    <strong>Bulletin Focus:</strong> Analyze CTX694938 and its security implications
+                </div>
+                <div class="example-item"
+                    onclick="setPrompt('Analyze the latest exploited vulnerability in Citrix products')">
+                    <strong>Latest Vulnerability:</strong> Analyze the latest exploited vulnerability in Citrix products
+                </div>
+            </div>
+
+            <hr class="section-divider">
+
+            <div class="examples">
+                <h3>📋 Default Prompts:</h3>
+                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-53770')">Analyze CVE-2025-53770</div>
+                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-31278')">Analyze CVE-2025-31278</div>
+                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-43236')">Analyze CVE-2025-43236</div>
+            </div>
+
+            <hr class="section-divider">
+
+            <form id="analysisForm">
+                <div class="form-group">
+                    <label for="prompt">VM-Agent Prompt:</label>
+                    <textarea id="prompt" name="prompt"
+                        placeholder="Enter your VM-Agent request (e.g., 'Analyze CVE-2025-7775')" required></textarea>
+                </div>
+
+                <button type="submit" id="submitBtn">Launch VM-Agent</button>
+            </form>
+
+            <div id="loading" class="loading" style="display: none;">
+                <p>🔄 Analyzing... This may take a few minutes.</p>
+            </div>
+
+
+
+            <div id="result"></div>
+        </div>
+
+        <div class="divider" id="splitter" aria-hidden="true"></div>
+
+        <div class="panel" id="rightPanel">
+            <div class="logs-header">
+                <h3 style="margin:0">🧪 Live Debug Output</h3>
+                <div>
+                    <span class="badge" id="streamStatus">idle</span>
+                    <button id="clearLogsBtn" style="margin-left:8px">Clear</button>
+                </div>
+            </div>
+            <div id="logs" class="logs-box"></div>
+        </div>
+    </div>
+
+    <script>
+        let isExecuting = false;
+        let sessionId = null;
+        let eventSource = null;
+
+        function setPrompt(prompt) {
+            document.getElementById('prompt').value = prompt;
+        }
+
+        document.getElementById('analysisForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const prompt = document.getElementById('prompt').value.trim();
+            if (!prompt) {
+                alert('Please enter a prompt');
+                return;
+            }
+
+            if (isExecuting) {
+                alert('Analysis already in progress. Please wait.');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submitBtn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const logs = document.getElementById('logs');
+            const streamStatus = document.getElementById('streamStatus');
+
+            // Close any previous stream
+            if (eventSource) {
+                try { eventSource.close(); } catch (_) { }
+                eventSource = null;
+            }
+
+            // Show loading state
+            isExecuting = true;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Analyzing...';
+            loading.style.display = 'block';
+            result.innerHTML = '';
+            logs.textContent = '';
+            streamStatus.textContent = 'connecting…';
+
+            try {
+                // Create a new streaming session
+                const startRes = await fetch('/api/start_run', { method: 'POST' });
+                const startData = await startRes.json();
+                sessionId = startData.session_id;
+
+                // Open SSE stream
+                eventSource = new EventSource(`/api/logs/stream?session_id=${sessionId}`);
+                eventSource.onmessage = (ev) => {
+                    if (!ev.data) return;
+                    logs.appendChild(document.createTextNode(ev.data + '\n'));
+                    logs.scrollTop = logs.scrollHeight;
+                    streamStatus.textContent = 'streaming';
+                };
+                eventSource.addEventListener('done', () => {
+                    streamStatus.textContent = 'done';
+                    if (eventSource) { eventSource.close(); eventSource = null; }
+                });
+                eventSource.onerror = () => {
+                    streamStatus.textContent = 'error';
+                };
+
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt: prompt, session_id: sessionId })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    result.innerHTML = `
+                        <div class="result success">
+                            <h3>✅ Analysis Complete</h3>
+                            <div class="markdown-content">${data.result_html || data.result}</div>
+                            ${data.timing ? `
+                                <div class="timing-info">
+                                    <strong>Execution Time:</strong> ${data.timing.total_duration_formatted || 'N/A'}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                } else {
+                    result.innerHTML = `
+                        <div class="result error">
+                            <h3>❌ Analysis Failed</h3>
+                            <p>${data.error}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                result.innerHTML = `
+                    <div class="result error">
+                        <h3>❌ Network Error</h3>
+                        <p>Failed to connect to the analysis service: ${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                // Reset button state
+                isExecuting = false;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Launch VM-Agent';
+                loading.style.display = 'none';
+            }
+        });
+
+        document.getElementById('clearLogsBtn').addEventListener('click', function () {
+            const logs = document.getElementById('logs');
+            logs.textContent = '';
+        });
+
+        // Resizable splitter logic
+        (function () {
+            const container = document.querySelector('.split-container');
+            const right = document.getElementById('rightPanel');
+            const splitter = document.getElementById('splitter');
+            if (!container || !right || !splitter) return;
+
+            let dragging = false;
+            function clamp(value, min, max) {
+                return Math.max(min, Math.min(max, value));
+            }
+
+            splitter.addEventListener('pointerdown', (e) => {
+                dragging = true;
+                splitter.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                const rect = container.getBoundingClientRect();
+                const styles = getComputedStyle(container);
+                const gap = parseFloat(styles.columnGap) || 16;
+                const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+                const paddingRight = parseFloat(styles.paddingRight) || 0;
+                const splitterWidth = splitter.getBoundingClientRect().width || 6;
+
+                // Available content width for left + right columns (exclude paddings, gaps, splitter)
+                const contentWidth = rect.width - paddingLeft - paddingRight;
+                const available = contentWidth - splitterWidth - 2 * gap;
+
+                // Pointer position within the content box (exclude left padding)
+                const clampedPointerX = Math.max(rect.left + paddingLeft, Math.min(e.clientX, rect.right - paddingRight));
+                const pointerXWithinContent = clampedPointerX - rect.left - paddingLeft;
+
+                const leftMinPx = 160; // allow narrower left
+                const rightMinPx = parseFloat(getComputedStyle(right).minWidth) || 320;
+                const leftMaxByContainer = Math.max(leftMinPx, available - rightMinPx);
+
+                // Splitter sits after left column and a gap, hence subtract gap
+                let desiredLeft = pointerXWithinContent - gap;
+                desiredLeft = clamp(desiredLeft, leftMinPx, leftMaxByContainer);
+                const desiredRight = available - desiredLeft;
+
+                container.style.gridTemplateColumns = `${Math.round(desiredLeft)}px ${splitterWidth}px ${Math.round(desiredRight)}px`;
+            });
+
+            function stopDrag(e) {
+                if (!dragging) return;
+                dragging = false;
+                try { splitter.releasePointerCapture(e.pointerId); } catch (_) { }
+            }
+            window.addEventListener('pointerup', stopDrag);
+            window.addEventListener('pointercancel', stopDrag);
+        })();
+    </script>
+</body>
+
+</html>
