@@ -4,27 +4,19 @@ A mockup vulnerability analysis tool that uses AI agents to research and analyze
 
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 ![Framework](https://img.shields.io/badge/Framework-Flask-000?logo=flask)
+![Orchestration](https://img.shields.io/badge/Orchestration-CrewAI-673ab7)
 ![Model](https://img.shields.io/badge/Model-gpt--4o-00bcd4)
 ![Logs](https://img.shields.io/badge/Logs-SSE%20live%20streaming-ff9800)
 ![MCP](https://img.shields.io/badge/MCP-Vulners-795548)
 ![Port](https://img.shields.io/badge/Port-8080-2196f3)
 ![Web UI](https://img.shields.io/badge/Web%20UI-Auto%20opens%20browser-4caf50)
+![Agents](https://img.shields.io/badge/Agents-7-9c27b0)
+![Tasks](https://img.shields.io/badge/Tasks-7-3f51b5)
+![Tools](https://img.shields.io/badge/Tools-3-009688)
 
 ![VM-Agent Web UI](images/VM-Agent%20WebUI.png)
 
 > Tested with OpenAI model gpt-4o.
-
-## At a glance
-
-| Metric | Value |
-|---|---|
-| Agents | 7 specialized roles (planning, research, exploitation, CTI, scoring, synthesis) |
-| Web UI | Flask app with resizable split pane |
-| Live logs | Server‑Sent Events (SSE) stream in-browser |
-| Auto-open | Launches one browser tab on start (`run_local.py`) |
-| Default host/port | `localhost:8080` |
-| MCP server | `localhost:8000` (configurable via env) |
-| Logging | Files named `vm_agent_log_at_YYYY-MM-DDTHH-MM-SS.txt` |
 
 ## Features
 
