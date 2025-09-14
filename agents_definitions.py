@@ -74,13 +74,11 @@ def _canonicalize_openai_model_name(name: str) -> str:
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # Can be overridden via environment
 MODEL_NAME = _canonicalize_openai_model_name(OPENAI_MODEL)
 
-# Individual LLM configurations are now defined inline with each agent for optimized performance
-
 # =============================================================================
 # TOOL DEFINITIONS (descriptions colocated with classes)
 # =============================================================================
 
-# CVE Search Tool - description colocated
+# CVE Search Tool 
 MCP_VULNERS_CVE_TOOL_DESCRIPTION = """\
 Searches the Vulners database for comprehensive CVE vulnerability information using structured MCP integration.
 
@@ -146,7 +144,7 @@ class MCPVulnersCVETool(BaseTool):
         except Exception as err:
             return json.dumps({"error": f"Vulners tool error: {err}"})
 
-# Bulletin Search Tool - description colocated
+# Bulletin Search Tool 
 MCP_VULNERS_BULLETIN_TOOL_DESCRIPTION = """\
 Searches the Vulners database for comprehensive information on security bulletins, advisories, and vendor patches using structured MCP integration.
 
@@ -225,7 +223,7 @@ class MCPVulnersBulletinTool(BaseTool):
         except Exception as err:
             return json.dumps({"error": f"Vulners tool error: {err}"})
 
-# Internet Search Tool - description colocated
+# Internet Search Tool 
 SEARCH_TOOL_DESCRIPTION = """\
 Powerful internet search tool for gathering threat intelligence and vulnerability information from web sources.
 
