@@ -1,4 +1,4 @@
-# Vulners AI Agent
+# VM-Agent
 
 A mockup vulnerability analysis tool that uses AI agents to research and analyze security vulnerabilities using the Vulners database and internet intelligence.
 
