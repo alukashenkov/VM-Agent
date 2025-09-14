@@ -77,9 +77,10 @@ MODEL_NAME = _canonicalize_openai_model_name(OPENAI_MODEL)
 # Individual LLM configurations are now defined inline with each agent for optimized performance
 
 # =============================================================================
-# TOOL DESCRIPTIONS
+# TOOL DEFINITIONS (descriptions colocated with classes)
 # =============================================================================
 
+# CVE Search Tool - description colocated
 MCP_VULNERS_CVE_TOOL_DESCRIPTION = """\
 Searches the Vulners database for comprehensive CVE vulnerability information using structured MCP integration.
 
@@ -90,49 +91,6 @@ CRITICAL INPUT FORMAT:
 - Example: cve_id="CVE-2025-53770"
 
 Returns complete technical data including CVSS vectors, CWE classifications, EPSS scores, exploitation intelligence, affected products, and related documents. Use for primary CVE vulnerability research."""
-
-MCP_VULNERS_BULLETIN_TOOL_DESCRIPTION = """\
-Searches the Vulners database for comprehensive information on security bulletins, advisories, and vendor patches using structured MCP integration.
-
-CRITICAL INPUT FORMAT:
-- Input parameter: bulletin_id (string)
-- MUST be exactly a bulletin identifier like 'RHSA-2025:11803', 'GHSA-abcd-1234-efgh', 'USN-7676-1', 'MSB-MS25-001', 'KB5002754' or any other supported bulletin identifier
-- DO NOT pass JSON objects, arrays, or complex data structures
-- Example: bulletin_id="GHSA-xx4q-4v7g-9x8m" or bulletin_id="RHSA-2025:11803" or bulletin_id="USN-7676-1" or bulletin_id="MSB-MS25-001" or bulletin_id="KB5002754" or bulletin_id="MSB-2025-001" or other supported bulletin identifiers
-
-Returns detailed information including: full descriptions, official vendor links, patch details, affected versions, remediation guidance, and related CVEs.
-
-CRITICAL USAGE RULE: Only use bulletin IDs that appear in CVE Search Tool results.
-NEVER invent, guess, or construct bulletin IDs. Extract exact bulletin IDs from CVE tool output only.
-
-BULLETIN ID SOURCE VALIDATION:
-- ONLY USE: Bulletin IDs that appear in CVE search results [RELATED_DOCUMENTS] section
-- NEVER USE: URLs, CVE IDs, descriptive text, or invented identifiers
-- SOURCE: Extract exact bulletin IDs from CVE tool output only
-
-MANDATORY for researching vendor patches, security updates, and comprehensive remediation guidance found in CVE reference sections."""
-
-SEARCH_TOOL_DESCRIPTION = """\
-Powerful internet search tool for gathering threat intelligence and vulnerability information from web sources.
-
-CAPABILITIES:
-- Search for recent vulnerability information and security news
-- Find CVE identifiers and security advisories from online sources
-- Research threat actor attribution and attack campaigns
-- Gather industry security reports and analysis
-- Discover vendor patches and security updates
-
-USES:
-- Identifier discovery when specific CVE IDs are not provided
-- Threat intelligence research and adversary attribution
-- Security news and vulnerability trend analysis
-- Vendor advisory and patch information gathering
-
-IMPORTANT: Use when no specific identifiers are available in the prompt to discover recent security information."""
-
-# =============================================================================
-# TOOL DEFINITIONS
-# =============================================================================
 
 class MCPVulnersCVETool(BaseTool):
     """Tool for searching CVE vulnerability information using Vulners MCP."""
@@ -187,6 +145,28 @@ class MCPVulnersCVETool(BaseTool):
             return json.dumps({"error": f"Request error for CVE {cve_id}: {type(err).__name__}: {err}"})
         except Exception as err:
             return json.dumps({"error": f"Vulners tool error: {err}"})
+
+# Bulletin Search Tool - description colocated
+MCP_VULNERS_BULLETIN_TOOL_DESCRIPTION = """\
+Searches the Vulners database for comprehensive information on security bulletins, advisories, and vendor patches using structured MCP integration.
+
+CRITICAL INPUT FORMAT:
+- Input parameter: bulletin_id (string)
+- MUST be exactly a bulletin identifier like 'RHSA-2025:11803', 'GHSA-abcd-1234-efgh', 'USN-7676-1', 'MSB-MS25-001', 'KB5002754' or any other supported bulletin identifier
+- DO NOT pass JSON objects, arrays, or complex data structures
+- Example: bulletin_id="GHSA-xx4q-4v7g-9x8m" or bulletin_id="RHSA-2025:11803" or bulletin_id="USN-7676-1" or bulletin_id="MSB-MS25-001" or bulletin_id="KB5002754" or bulletin_id="MSB-2025-001" or other supported bulletin identifiers
+
+Returns detailed information including: full descriptions, official vendor links, patch details, affected versions, remediation guidance, and related CVEs.
+
+CRITICAL USAGE RULE: Only use bulletin IDs that appear in CVE Search Tool results.
+NEVER invent, guess, or construct bulletin IDs. Extract exact bulletin IDs from CVE tool output only.
+
+BULLETIN ID SOURCE VALIDATION:
+- ONLY USE: Bulletin IDs that appear in CVE search results [RELATED_DOCUMENTS] section
+- NEVER USE: URLs, CVE IDs, descriptive text, or invented identifiers
+- SOURCE: Extract exact bulletin IDs from CVE tool output only
+
+MANDATORY for researching vendor patches, security updates, and comprehensive remediation guidance found in CVE reference sections."""
 
 class MCPVulnersBulletinTool(BaseTool):
     """Tool for searching security bulletins using Vulners MCP."""
@@ -244,7 +224,26 @@ class MCPVulnersBulletinTool(BaseTool):
             return json.dumps({"error": f"Request error for bulletin {bulletin_id}: {type(err).__name__}: {err}"})
         except Exception as err:
             return json.dumps({"error": f"Vulners tool error: {err}"})
-        
+
+# Internet Search Tool - description colocated
+SEARCH_TOOL_DESCRIPTION = """\
+Powerful internet search tool for gathering threat intelligence and vulnerability information from web sources.
+
+CAPABILITIES:
+- Search for recent vulnerability information and security news
+- Find CVE identifiers and security advisories from online sources
+- Research threat actor attribution and attack campaigns
+- Gather industry security reports and analysis
+- Discover vendor patches and security updates
+
+USES:
+- Identifier discovery when specific CVE IDs are not provided
+- Threat intelligence research and adversary attribution
+- Security news and vulnerability trend analysis
+- Vendor advisory and patch information gathering
+
+IMPORTANT: Use when no specific identifiers are available in the prompt to discover recent security information."""
+
 class SerperSearchTool(BaseTool):
     """Direct Serper API integration for reliable internet search."""
 
@@ -438,6 +437,9 @@ RISK INPUT CONTRIBUTION (MANDATORY):
 }
 - Keep it on one line, valid JSON. Use null/0 where data is missing. No extra commentary after this line."""
 
+# Append the risk output guide to the Vulnerability Researcher prompt so the agent includes the RISK_INPUTS line explicitly
+RESEARCHER_PROMPT = RESEARCHER_PROMPT + "\n" + RESEARCHER_RISK_OUTPUT_GUIDE
+
 vulnerability_researcher = Agent(
     role='Senior Vulnerability Researcher',
     goal='Systematically collect complete vulnerability intelligence by prioritizing Vulners database queries for known identifiers and conducting targeted internet research for unknown cases, ensuring comprehensive coverage of all related vulnerabilities and security bulletins.',
@@ -527,7 +529,7 @@ exploit_researcher = Agent(
     backstory=EXPLOIT_RESEARCHER_PROMPT,
     verbose=DEBUG_ENABLED,
     allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[],  # No tools - uses shared data from vulnerability_researcher
+    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
     llm=exploit_researcher_llm,
     cache=True
 )
@@ -549,28 +551,31 @@ You are a Technical Exploitation Analyst specializing in detailed exploitation m
 ROLE: When vulnerabilities show ample exploitation evidence, retrieve and analyze comprehensive technical exploitation information from multiple sources to provide detailed exploitation methodology summaries.
 
 CRITICAL PRINCIPLES:
-- Focus on vulnerabilities with strong exploitation evidence (wild_exploited=true, multiple exploit documents, CISA KEV presence)
-- Retrieve detailed technical information from internet sources and Vulners database references
+- Tool usage MANDATORY: Use ALL available tools:
+  - MCPVulnersCVETool to fetch CVE data and related_documents
+  - MCPVulnersBulletinTool to retrieve full documents by bulletin_id
+  - SerperSearchTool (internet) to fill gaps not covered by Vulners
+- Always start with Vulners CVE → parse related_documents → fetch bulletins → THEN search internet for missing technical details
 - Extract and summarize exploitation methodologies, code samples, and technical details
 - Prioritize authoritative sources (GitHub, ExploitDB, security research blogs, vendor advisories)
 - NEVER invent technical details - base analysis on actual source material
   - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
 
 ANALYSIS METHODOLOGY:
-1. SOURCE IDENTIFICATION: Extract exploitation document references from Vulners MCP data
-   - Related documents with type=exploit
-   - Bulletin IDs from related_documents section
-   - Technical references in CVE descriptions
+1. SOURCE IDENTIFICATION (Vulners CVE tool):
+   - Use MCPVulnersCVETool with the CVE ID to retrieve CVE data
+   - Extract related_documents (type=exploit, scanner, blog, vendor) with bulletin_id and titles
+   - Note titles to prioritize documents likely containing technical details
 
-2. VULNERS DOCUMENT RETRIEVAL: Use Vulners MCP tools to retrieve referenced documents by ID
-   - Extract bulletin IDs from CVE search results
-   - Use bulletin tool to get detailed technical information
-   - Parse technical details from retrieved documents
+2. VULNERS DOCUMENT RETRIEVAL (Bulletin tool):
+   - For each prioritized related document, call MCPVulnersBulletinTool by bulletin_id
+   - Parse and extract technical content (methods, parameters, preconditions, code snippets)
+   - Record publication dates to assess recency
 
-3. INTERNET TECHNICAL SEARCH: Search for detailed exploitation information when needed
-   - Use specific search terms combining CVE ID with "exploit technical details"
-   - Look for proof-of-concept code, exploitation walkthroughs, technical write-ups
-   - Prioritize recent publications with technical depth
+3. INTERNET TECHNICAL SEARCH (ALWAYS perform to fill gaps):
+   - Use SerperSearchTool with targeted queries: "<CVE-ID> exploit technical details", "PoC", "write-up", product-specific attack terms
+   - Retrieve missing details not present in Vulners (constraints, full exploitation steps, mitigation bypass techniques)
+   - Prioritize authoritative and recent sources; cross-validate against Vulners content
 
 4. TECHNICAL ANALYSIS: Extract and organize exploitation details
    - Exploitation methodology and attack vectors
@@ -881,7 +886,9 @@ REPORT STRUCTURE:
 
 QUALITY STANDARDS: Every claim traceable to tool output, professional tone, actionable intelligence, risk score integration.
 
-DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Exploit Intelligence Analyst" OR "Cyber Threat Intelligence Researcher" OR "Vulnerability Risk Scoring Analyst"."""
+MANDATORY TECHNICAL INTEGRATION: When available, integrate detailed technical exploitation analysis produced by the Technical Exploitation Analyst, including exploitation methodologies, code examples, technical requirements/constraints, and mitigation bypass notes.
+
+DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Exploit Intelligence Analyst" OR "Cyber Threat Intelligence Researcher" OR "Technical Exploitation Analyst" OR "Vulnerability Risk Scoring Analyst"."""
 
 analyst = Agent(
     role='Principal Security Analyst',
@@ -1063,7 +1070,7 @@ OUTPUT PROTOCOL:
 )
 
 technical_exploitation_task = Task(
-    description="""Retrieve and analyze detailed technical exploitation information for vulnerabilities with ample exploitation evidence.
+    description="""Retrieve and analyze detailed technical exploitation information for vulnerabilities with ample exploitation evidence using ALL available tools (Vulners CVE, Vulners Bulletin, and Internet Search).
 
 ACTIVATION CRITERIA: Only execute when vulnerability shows strong exploitation evidence:
 - wild_exploited=true status from Vulners MCP data
@@ -1072,18 +1079,18 @@ ACTIVATION CRITERIA: Only execute when vulnerability shows strong exploitation e
 - Significant technical research needed beyond basic status
 
 TECHNICAL ANALYSIS OBJECTIVES:
-1. VULNERS REFERENCE EXTRACTION: Extract exploitation document references from Vulners MCP data
+1. VULNERS REFERENCE EXTRACTION (MANDATORY): Extract exploitation document references from Vulners MCP data using CVE tool
    - Related documents with type=exploit
    - Bulletin IDs from related_documents section
    - Technical references in CVE descriptions
    - Security advisory references
 
-2. DOCUMENT RETRIEVAL: Use Vulners MCP tools to retrieve referenced documents by ID
+2. DOCUMENT RETRIEVAL (MANDATORY): Use Vulners MCP tools to retrieve referenced documents by ID
    - Extract exact bulletin IDs from CVE search results
    - Use MCPVulnersBulletinTool to get detailed technical information
    - Parse technical details, code samples, and methodologies from retrieved documents
 
-3. INTERNET TECHNICAL SEARCH: Search for additional detailed exploitation information
+3. INTERNET TECHNICAL SEARCH (MANDATORY): Search for additional detailed exploitation information not present in Vulners
    - Use specific search terms: "[CVE-ID] exploit technical details methodology"
    - Look for proof-of-concept code, exploitation walkthroughs, technical write-ups
    - Prioritize authoritative sources (GitHub, ExploitDB, security research blogs)
@@ -1111,8 +1118,8 @@ DELIVERABLES: Comprehensive technical exploitation summary including:
 - Real-world application scenarios and impact analysis
 - Technical mitigation analysis and bypass techniques
 
-EFFICIENCY RULE: Work exclusively with previously collected intelligence - no additional Vulners queries needed if this ID has already been researched.
-TOOL USAGE: Use Vulners MCP tools FIRST for referenced documents if IDs are present in the context, then internet search for additional technical details.
+EFFICIENCY RULE: Use Vulners tools FIRST when identifiers are present; ALWAYS follow with internet search to fill missing technical details.
+TOOL USAGE: Explicitly call MCPVulnersCVETool → parse related_documents and titles → MCPVulnersBulletinTool by bulletin_id → SerperSearchTool for gaps.
 
 OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt.
@@ -1192,7 +1199,7 @@ CRITICAL REQUIREMENTS:
 analysis_task = Task(
     description="""Create a comprehensive vulnerability analysis report using ONLY SHARED data from previous research tasks. NO additional tool calls required.
 
-DATA SOURCE: Use ONLY the outputs from: vulnerability_researcher (Vulners MCP data), exploit_researcher (exploitation analysis), internet_researcher (threat intelligence), and risk_analyst (quantitative scoring).
+DATA SOURCE: Use ONLY the outputs from: vulnerability_researcher (Vulners MCP data), exploit_researcher (exploitation analysis), technical_exploit_researcher (technical exploitation details), internet_researcher (threat intelligence), and risk_analyst (quantitative scoring).
 
 SYNTHESIS REQUIREMENTS:
 1. Integrate exact technical metrics (CVSS, CWE, EPSS with precise values) from shared Vulners data
