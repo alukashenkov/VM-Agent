@@ -326,9 +326,35 @@ class SerperSearchTool(BaseTool):
             return f"Unexpected error during search: {e}. Query: '{query}'"
 
 # =============================================================================
-# AGENT PROMPTS AND INSTRUCTIONS
+# AGENT DEFINITIONS
 # =============================================================================
 
+def create_llm_with_config(config, request_timeout=90, api_key=None):
+    """Create LiteLLM with config dictionary and additional parameters."""
+    llm_params = {
+        'model': config['model'],
+        'temperature': config['temperature'],
+        'max_retries': config['max_retries'],
+        'max_completion_tokens': config['max_completion_tokens'],
+        'request_timeout': request_timeout,
+        'api_key': api_key or os.getenv("OPENAI_API_KEY"),
+    }
+
+    llm = ChatLiteLLM(**llm_params)
+    llm._config_values = config.copy()
+    return llm
+
+# Research Planning Agent - Strategic planning and workflow optimization
+research_planner_llm_config = {
+    'model': MODEL_NAME,
+    'temperature': 0.1,  # Very low for structured, predictable planning
+    'max_retries': 3,
+    'max_completion_tokens': 10000,
+}
+
+research_planner_llm = create_llm_with_config(research_planner_llm_config)
+
+# Research Planner prompt placed near the agent declaration
 RESEARCH_PLANNER_PROMPT = """\
 You are a Research Strategy Planner specializing in vulnerability research methodology.
 
@@ -352,6 +378,28 @@ RISK INPUT CONTRIBUTION (MANDATORY):
 - RISK_INPUTS={"source":"Research Strategy Planner","popularity":{"category":"internet-critical|enterprise-backbone|business-app|specialized|niche|null"},"notes":"short rationale for popularity if any"}
 - Keep it on one line, valid JSON. Use null when unsure. No extra commentary after this line."""
 
+research_planner = Agent(
+    role='Research Strategy Planner',
+    goal='Analyze research requests and create optimized investigation strategies that prioritize Vulners database queries when identifiers are present, ensuring efficient resource allocation and systematic vulnerability research.',
+    backstory=RESEARCH_PLANNER_PROMPT,
+    verbose=DEBUG_ENABLED,
+    allow_delegation=False,  # Planners don't need delegation
+    tools=[],  # No tools needed for planning
+    llm=research_planner_llm,
+    cache=True
+)
+
+# Vulnerability Research Agent - Primary data collection and systematic research
+vulnerability_researcher_llm_config = {
+    'model': MODEL_NAME,
+    'temperature': 0.2,  # Balanced accuracy for systematic research
+    'max_retries': 3,
+    'max_completion_tokens': 10000,
+}
+
+vulnerability_researcher_llm = create_llm_with_config(vulnerability_researcher_llm_config)
+
+# Vulnerability Researcher prompts near the agent declaration
 RESEARCHER_PROMPT = """\
 You are a Senior Vulnerability Researcher. Execute research plans by gathering comprehensive vulnerability intelligence from Vulners database and internet sources.
 
@@ -390,6 +438,28 @@ RISK INPUT CONTRIBUTION (MANDATORY):
 }
 - Keep it on one line, valid JSON. Use null/0 where data is missing. No extra commentary after this line."""
 
+vulnerability_researcher = Agent(
+    role='Senior Vulnerability Researcher',
+    goal='Systematically collect complete vulnerability intelligence by prioritizing Vulners database queries for known identifiers and conducting targeted internet research for unknown cases, ensuring comprehensive coverage of all related vulnerabilities and security bulletins.',
+    backstory=RESEARCHER_PROMPT,
+    verbose=DEBUG_ENABLED,
+    allow_delegation=True,  # Enable delegation for collaborative research
+    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
+    llm=vulnerability_researcher_llm,
+    cache=True
+)
+
+# Exploit Intelligence Analyst - Technical exploit analysis and risk assessment
+exploit_researcher_llm_config = {
+    'model': MODEL_NAME,
+    'temperature': 0.15,  # Very low for precise technical analysis
+    'max_retries': 3,
+    'max_completion_tokens': 10000,
+}
+
+exploit_researcher_llm = create_llm_with_config(exploit_researcher_llm_config)
+
+# Exploit Researcher prompt near the agent declaration
 EXPLOIT_RESEARCHER_PROMPT = """\
 You are an Exploit Intelligence Analyst. Analyze exploitation status, EPSS scores, and exploit documents from SHARED Vulners MCP data collected by the Senior Vulnerability Researcher.
 
@@ -451,6 +521,28 @@ RISK INPUT CONTRIBUTION (MANDATORY):
 
 DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Principal Security Analyst"."""
 
+exploit_researcher = Agent(
+    role='Exploit Intelligence Analyst',
+    goal='Analyze exploitation patterns, EPSS scores, and exploit document evidence from shared Vulners MCP data to provide detailed technical exploit intelligence and risk assessments based solely on database findings.',
+    backstory=EXPLOIT_RESEARCHER_PROMPT,
+    verbose=DEBUG_ENABLED,
+    allow_delegation=True,  # Enable delegation for collaborative research
+    tools=[],  # No tools - uses shared data from vulnerability_researcher
+    llm=exploit_researcher_llm,
+    cache=True
+)
+
+# Technical Exploitation Analyst - Detailed technical analysis of exploits
+technical_exploit_researcher_llm_config = {
+    'model': MODEL_NAME,
+    'temperature': 0.2,  # Balanced for technical accuracy and creativity
+    'max_retries': 3,
+    'max_completion_tokens': 10000,
+}
+
+technical_exploit_researcher_llm = create_llm_with_config(technical_exploit_researcher_llm_config)
+
+# Technical Exploit Analyst prompt near the agent declaration
 TECHNICAL_EXPLOIT_ANALYST_PROMPT = """\
 You are a Technical Exploitation Analyst specializing in detailed exploitation methodology and technical details.
 
@@ -517,6 +609,28 @@ RISK INPUT CONTRIBUTION (MANDATORY):
 
 DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Exploit Intelligence Analyst"."""
 
+technical_exploit_researcher = Agent(
+    role='Technical Exploitation Analyst',
+    goal='Retrieve and analyze detailed technical exploitation information from internet sources and Vulners database references to provide comprehensive exploitation methodology summaries and technical details.',
+    backstory=TECHNICAL_EXPLOIT_ANALYST_PROMPT,
+    verbose=DEBUG_ENABLED,
+    allow_delegation=True,  # Enable delegation for collaborative research
+    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
+    llm=technical_exploit_researcher_llm,
+    cache=True
+)
+
+# Cyber Threat Intelligence Researcher - Threat actor attribution and campaign analysis
+internet_researcher_llm_config = {
+    'model': MODEL_NAME,
+    'temperature': 0.25,  # Balanced for analytical creativity with accuracy
+    'max_retries': 3,
+    'max_completion_tokens': 10000,
+}
+
+internet_researcher_llm = create_llm_with_config(internet_researcher_llm_config)
+
+# Internet Researcher prompt near the agent declaration
 INTERNET_RESEARCHER_PROMPT = """\
 You are a Cyber Threat Intelligence Researcher. Augment Vulners data with verified threat intelligence focused on adversary attribution and attack campaigns.
 
@@ -559,6 +673,28 @@ RISK INPUT CONTRIBUTION (MANDATORY):
 
 DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Exploit Intelligence Analyst"."""
 
+internet_researcher = Agent(
+    role='Cyber Threat Intelligence Researcher',
+    goal='Research and validate threat actor attribution, attack campaigns, and adversary behavior patterns using authoritative sources to provide verified threat intelligence that complements technical vulnerability analysis.',
+    backstory=INTERNET_RESEARCHER_PROMPT,
+    verbose=DEBUG_ENABLED,
+    allow_delegation=True,  # Enable delegation for collaborative research
+    tools=[SerperSearchTool()],
+    llm=internet_researcher_llm,
+    cache=True
+)
+
+# Vulnerability Risk Scoring Analyst - Quantitative risk assessment
+risk_analyst_llm_config = {
+    'model': MODEL_NAME,
+    'temperature': 0.1,  # Very low for precise numerical scoring
+    'max_retries': 3,
+    'max_completion_tokens': 5000,
+}
+
+risk_analyst_llm = create_llm_with_config(risk_analyst_llm_config)
+
+# Risk Analyst prompt near the agent declaration
 RISK_ANALYST_PROMPT = """\
 You are a Vulnerability Risk Scoring Analyst. Generate quantitative risk scores based on Vulners MCP data using the evidence-based scoring algorithm.
 
@@ -696,170 +832,6 @@ OUTPUT FORMAT: Return only JSON object: {"value": X.X, "uncertainty": Y.Y}
 
 EVIDENCE-ONLY RULE: Work strictly with provided Vulners data. Never assume or extrapolate beyond available information."""
 
-ANALYST_PROMPT = """\
-You are a Principal Security Analyst. Create a concise, professional vulnerability analysis report in flowing narrative paragraphs (NOT bullet points) using ONLY data from prior tool executions.
-
-EVIDENCE-ONLY RULE: Use ONLY findings from previous tool outputs - NO additional tool calls.
-
-RECENCY AWARENESS: Always evaluate the age of information and prioritize current patch availability over historical data.
-
-NARRATIVE REQUIREMENTS:
-- Write in cohesive flowing paragraphs (5-7 total)
-- Integrate technical metrics naturally in prose
-- Balance technical precision with accessible communication
-- Use natural transitions between concepts
-- NEVER speculate or conflate CVE IDs
-- State "No evidence found" for missing data
-- Report only actual vulnerability data (no reserved candidates)
-- MANDATORY: Include the generated risk score prominently in the analysis
-  - Explicitly explain how the score (value and uncertainty) was derived, citing the key drivers from evidence, popularity, technical exploitability, and EPSS
-
-REPORT STRUCTURE:
-- Opening: Vulnerability overview with key metrics (CVSS, CWE, EPSS), products, exploitation status
-- Risk Assessment: Integrate the computed risk score with contextual explanation
-- Exploitation Analysis: Real-world evidence, threat actors, methodology with confidence levels
-- Vulnerability Context: Related CVEs, exploit chains, vulnerability families
-- Remediation Guidance: Patches, configurations, detection strategies with priorities
-- Assessment Summary: Risk evaluation with score justification and actionable next steps
-
-QUALITY STANDARDS: Every claim traceable to tool output, professional tone, actionable intelligence, risk score integration.
-
-DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Exploit Intelligence Analyst" OR "Cyber Threat Intelligence Researcher" OR "Vulnerability Risk Scoring Analyst"."""
-
-# =============================================================================
-# AGENT DEFINITIONS
-# =============================================================================
-
-def create_llm_with_config(config, request_timeout=90, api_key=None):
-    """Create LiteLLM with config dictionary and additional parameters."""
-    llm_params = {
-        'model': config['model'],
-        'temperature': config['temperature'],
-        'max_retries': config['max_retries'],
-        'max_completion_tokens': config['max_completion_tokens'],
-        'request_timeout': request_timeout,
-        'api_key': api_key or os.getenv("OPENAI_API_KEY"),
-    }
-
-    llm = ChatLiteLLM(**llm_params)
-    llm._config_values = config.copy()
-    return llm
-
-# Research Planning Agent - Strategic planning and workflow optimization
-research_planner_llm_config = {
-    'model': MODEL_NAME,
-    'temperature': 0.1,  # Very low for structured, predictable planning
-    'max_retries': 3,
-    'max_completion_tokens': 10000,
-}
-
-research_planner_llm = create_llm_with_config(research_planner_llm_config)
-
-research_planner = Agent(
-    role='Research Strategy Planner',
-    goal='Analyze research requests and create optimized investigation strategies that prioritize Vulners database queries when identifiers are present, ensuring efficient resource allocation and systematic vulnerability research.',
-    backstory=RESEARCH_PLANNER_PROMPT,
-    verbose=DEBUG_ENABLED,
-    allow_delegation=False,  # Planners don't need delegation
-    tools=[],  # No tools needed for planning
-    llm=research_planner_llm,
-    cache=True
-)
-
-# Vulnerability Research Agent - Primary data collection and systematic research
-vulnerability_researcher_llm_config = {
-    'model': MODEL_NAME,
-    'temperature': 0.2,  # Balanced accuracy for systematic research
-    'max_retries': 3,
-    'max_completion_tokens': 10000,
-}
-
-vulnerability_researcher_llm = create_llm_with_config(vulnerability_researcher_llm_config)
-
-vulnerability_researcher = Agent(
-    role='Senior Vulnerability Researcher',
-    goal='Systematically collect complete vulnerability intelligence by prioritizing Vulners database queries for known identifiers and conducting targeted internet research for unknown cases, ensuring comprehensive coverage of all related vulnerabilities and security bulletins.',
-    backstory=RESEARCHER_PROMPT,
-    verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
-    llm=vulnerability_researcher_llm,
-    cache=True
-)
-
-# Exploit Intelligence Analyst - Technical exploit analysis and risk assessment
-exploit_researcher_llm_config = {
-    'model': MODEL_NAME,
-    'temperature': 0.15,  # Very low for precise technical analysis
-    'max_retries': 3,
-    'max_completion_tokens': 10000,
-}
-
-exploit_researcher_llm = create_llm_with_config(exploit_researcher_llm_config)
-
-exploit_researcher = Agent(
-    role='Exploit Intelligence Analyst',
-    goal='Analyze exploitation patterns, EPSS scores, and exploit document evidence from shared Vulners MCP data to provide detailed technical exploit intelligence and risk assessments based solely on database findings.',
-    backstory=EXPLOIT_RESEARCHER_PROMPT,
-    verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[],  # No tools - uses shared data from vulnerability_researcher
-    llm=exploit_researcher_llm,
-    cache=True
-)
-
-# Technical Exploitation Analyst - Detailed technical analysis of exploits
-technical_exploit_researcher_llm_config = {
-    'model': MODEL_NAME,
-    'temperature': 0.2,  # Balanced for technical accuracy and creativity
-    'max_retries': 3,
-    'max_completion_tokens': 10000,
-}
-
-technical_exploit_researcher_llm = create_llm_with_config(technical_exploit_researcher_llm_config)
-
-technical_exploit_researcher = Agent(
-    role='Technical Exploitation Analyst',
-    goal='Retrieve and analyze detailed technical exploitation information from internet sources and Vulners database references to provide comprehensive exploitation methodology summaries and technical details.',
-    backstory=TECHNICAL_EXPLOIT_ANALYST_PROMPT,
-    verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
-    llm=technical_exploit_researcher_llm,
-    cache=True
-)
-
-# Cyber Threat Intelligence Researcher - Threat actor attribution and campaign analysis
-internet_researcher_llm_config = {
-    'model': MODEL_NAME,
-    'temperature': 0.25,  # Balanced for analytical creativity with accuracy
-    'max_retries': 3,
-    'max_completion_tokens': 10000,
-}
-
-internet_researcher_llm = create_llm_with_config(internet_researcher_llm_config)
-
-internet_researcher = Agent(
-    role='Cyber Threat Intelligence Researcher',
-    goal='Research and validate threat actor attribution, attack campaigns, and adversary behavior patterns using authoritative sources to provide verified threat intelligence that complements technical vulnerability analysis.',
-    backstory=INTERNET_RESEARCHER_PROMPT,
-    verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[SerperSearchTool()],
-    llm=internet_researcher_llm,
-    cache=True
-)
-
-# Vulnerability Risk Scoring Analyst - Quantitative risk assessment
-risk_analyst_llm_config = {
-    'model': MODEL_NAME,
-    'temperature': 0.1,  # Very low for precise numerical scoring
-    'max_retries': 3,
-    'max_completion_tokens': 5000,
-}
-
-risk_analyst_llm = create_llm_with_config(risk_analyst_llm_config)
-
 risk_analyst = Agent(
     role='Vulnerability Risk Scoring Analyst',
     goal='Generate precise quantitative risk scores with uncertainty metrics by analyzing structured CVE intelligence data from Vulners MCP using evidence-based scoring algorithms.',
@@ -880,6 +852,36 @@ analyst_llm_config = {
 }
 
 analyst_llm = create_llm_with_config(analyst_llm_config)
+
+# Principal Security Analyst prompt near the agent declaration
+ANALYST_PROMPT = """\
+You are a Principal Security Analyst. Create a concise, professional vulnerability analysis report in flowing narrative paragraphs (NOT bullet points) using ONLY data from prior tool executions.
+
+EVIDENCE-ONLY RULE: Use ONLY findings from previous tool outputs - NO additional tool calls.
+
+RECENCY AWARENESS: Always evaluate the age of information and prioritize current patch availability over historical data.
+
+NARRATIVE REQUIREMENTS:
+- Write in cohesive flowing paragraphs (5-7 total)
+- Integrate technical metrics naturally in prose
+- Balance technical precision with accessible communication
+- Use natural transitions between concepts
+- NEVER speculate or conflate CVE IDs
+- State "No evidence found" for missing data
+- Report only actual vulnerability data (no reserved candidates)
+- MANDATORY: Include the generated risk score prominently in the analysis
+  - Explicitly explain how the score (value and uncertainty) was derived, citing the key drivers from evidence, popularity, technical exploitability, and EPSS
+
+REPORT STRUCTURE:
+- Opening: Vulnerability overview with key metrics (CVSS, CWE, EPSS), products, exploitation status
+- Exploitation Analysis: Real-world evidence, threat actors, methodology with confidence levels
+- Vulnerability Context: Related CVEs, exploit chains, vulnerability families
+- Remediation Guidance: Patches, configurations, detection strategies with priorities
+- Assessment Summary: Final section integrating the computed risk score with contextual explanation, risk evaluation with score justification, and actionable next steps
+
+QUALITY STANDARDS: Every claim traceable to tool output, professional tone, actionable intelligence, risk score integration.
+
+DELEGATION: Use "Ask question to coworker" format with EXACT coworker names from: "Senior Vulnerability Researcher" OR "Exploit Intelligence Analyst" OR "Cyber Threat Intelligence Researcher" OR "Vulnerability Risk Scoring Analyst"."""
 
 analyst = Agent(
     role='Principal Security Analyst',
