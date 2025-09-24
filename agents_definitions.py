@@ -406,14 +406,37 @@ CRITICAL RULES:
 - ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025) - use relative terms only
 - NEVER conflate similar CVE IDs - each is a distinct vulnerability
   - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+ - RESERVED CVE RULE: If the CVE is in RESERVED state, explicitly state that status in your output. Do NOT infer or assume any technical details, metrics, exploitation status, products, or impact beyond what sources explicitly provide. If no details are available, say so.
+ - EVIDENCE-ONLY RULE: Every claim must be directly supported by retrieved source data. No speculation.
+ - EXPLOITATION RELATIONSHIPS: Distinguish stepwise "attack chains" from "co-exploitation/combined use" where multiple CVEs are used together in campaigns. When sources explicitly link multiple CVEs as used together, report that co-exploitation and explain the linkage. Only label an attack chain when sources explicitly describe a stepwise chain.
+ - RELATED CVEs (MANDATORY WHEN PRESENT): Always extract and list related CVEs from tool outputs and authoritative documents. Include up to 6 high-signal related CVEs prioritized by: (1) explicitly linked co-exploitation/chain mentions, (2) vendor advisories listing them together, (3) same product/version family in the same campaign. For each listed CVE, add a 3-8 word linkage reason.
 
 WORKFLOW:
 1. Check prompt for CVE/bulletin IDs FIRST
 2. If IDs present: Use Vulners CVE/Bulletin tools directly
 3. If NO IDs: Use internet search to discover identifiers, then research with Vulners
-4. Research ALL related CVEs found in tool outputs
+4. Consider investigating related CVEs found in tool outputs when the number is manageable; if sources link multiple CVEs in exploitation or campaigns, report co-exploitation/combined use and explain why they are related; only call it an exploitation chain when explicitly stated by sources. ALWAYS enumerate related CVEs discovered (up to 6) with short linkage reasons.
 5. Extract and research HIGH-VALUE bulletins (exploit docs, CISA alerts, vendor advisories)
 6. Provide complete technical profiles for analysis
+
+STRICT TOOL SEQUENCE (MANDATORY COMPLETION GATE):
+- Always perform in this order when CVE ID is known:
+  1) MCPVulnersCVETool → get CVE data
+  2) Parse related_documents
+  3) For EACH vendor advisory/bulletin found, call MCPVulnersBulletinTool by exact bulletin_id
+  4) Only after all linked bulletins are processed may you proceed to optional internet search (if needed)
+- Do NOT finish the task before processing all linked vendor advisories/bulletins present in related_documents
+
+VENDOR ADVISORY ACCESS (MANDATORY):
+- When the CVE tool returns related_documents that include vendor advisories/bulletins, retrieve them using MCPVulnersBulletinTool by exact bulletin_id to obtain authoritative details.
+- Base technical product/version/patch information primarily on vendor advisories when available.
+
+RESERVED CVE HANDLING (MANDATORY):
+- If the CVE is RESERVED:
+  - Explicitly state that status at the start of your output
+  - STILL parse related_documents and fetch any vendor advisories, vendor bulletins, or other authoritative references via MCPVulnersBulletinTool
+  - Summarize only what those authoritative documents state; do NOT infer any missing technical details, metrics, exploitation status, or impact
+  - If no related documents exist, do NOT perform internet searches; simply report the RESERVED status and lack of public details
 
 TOOL FORMAT: Always use simple strings - cve_id="CVE-XXXX-XXXXX" or bulletin_id="BULLETIN-ID"
 
@@ -467,7 +490,9 @@ CRITICAL PRINCIPLES:
 - Use ONLY shared Vulners MCP data from previous research tasks - NO tool calls
 - NEVER conflate different CVE IDs
   - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
-- Report only actual vulnerability data (no reserved candidates)
+- RESERVED CVE RULE: If the CVE is in RESERVED state, explicitly state that status and avoid any technical or exploitation claims. Do not infer details.
+- Report only actual vulnerability data; do not expand on reserved candidates
+- EVIDENCE-ONLY RULE: All statements must be drawn directly from shared tool outputs; no speculation
 - Extract data from vulnerability_researcher's tool outputs
 - PRIORITIZE RECENCY: Always evaluate document publication dates and prioritize the most recent information
 
@@ -505,7 +530,7 @@ RECENCY RULES:
 
 EFFICIENCY RULE: Never request additional Vulners data - work exclusively with previously collected intelligence.
 
-DELIVERABLES: Exploitation status, EPSS assessment, ShadowServer exploitation timeline with earliest occurrences, exploit availability analysis with recency context, and risk assessment based on shared data.
+DELIVERABLES: Exploitation status, EPSS assessment, ShadowServer exploitation timeline with earliest occurrences, exploit availability analysis with recency context, explicit RESERVED status when applicable, concise related CVE enumeration with linkage reasons (up to 6), and risk assessment based on shared data.
 
 RISK INPUT CONTRIBUTION (MANDATORY):
 - At the very end of your output, print exactly one single line in the following format:
@@ -558,6 +583,10 @@ CRITICAL PRINCIPLES:
 - Prioritize authoritative sources (GitHub, ExploitDB, security research blogs, vendor advisories)
 - NEVER invent technical details - base analysis on actual source material
   - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+
+RESERVED CVE HANDLING:
+- If the CVE is RESERVED and there are no authoritative linked documents, do NOT perform internet searches; report the RESERVED status and stop.
+- If authoritative linked documents exist (e.g., vendor advisories), summarize only their stated technical content; do not infer beyond the documents.
 
 ANALYSIS METHODOLOGY:
 1. SOURCE IDENTIFICATION (Vulners CVE tool):
@@ -645,6 +674,10 @@ CRITICAL PRINCIPLES:
 - NEVER conflate different CVE IDs
   - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
 
+RESERVED CVE HANDLING:
+- If the CVE is RESERVED and there are no linked authoritative documents in shared data, do NOT perform internet searches. State the RESERVED status and lack of public details.
+- If authoritative documents (e.g., vendor advisories) are linked in shared data, summarize them strictly without inference.
+
 SOURCE HIERARCHY:
 1. TIER 1: Government agencies (CISA, NSA, FBI), Vendor security teams, MITRE/NVD
 2. TIER 2: Major security firms (CrowdStrike, FireEye, Palo Alto Networks)
@@ -725,7 +758,7 @@ Extract from previous research outputs:
 - cwe_classifications: Weakness categories
 - Current date for recency calculations
 
-## Evidence Factor (E) Calculation with Recency Weighting and CVE Chain Analysis:
+## Evidence Factor (E) Calculation with Recency Weighting and CVE Relationship Analysis:
 ```
 Base wild_exploited: +0.7
 Shadowserver items: +0.1 per item (cap +0.5)
@@ -737,10 +770,11 @@ security research coverage: +0.3 each (cap +0.6 combined)
 document volume bonus: +0.2 * log10(total_documents/10) (cap +0.4)
 document diversity bonus: +0.15 * unique_document_types (cap +0.6)
 
-CVE CHAIN BONUSES:
-- Related CVE references: +0.2 per related CVE (cap +1.0)
-- Exploitation chain indicators: +0.3 per chain link (cap +0.9)
-- Prerequisite vulnerability connections: +0.25 per dependency (cap +0.75)
+CVE RELATIONSHIP BONUSES (ONLY WHEN EXPLICITLY EVIDENCED BY SOURCES):
+- Co-exploitation/combined use explicitly stated across documents: +0.15 each (cap +0.75)
+- Related CVE references explicitly described as part of a stepwise chain: +0.2 each (cap +1.0)
+- Exploitation chain indicators explicitly documented: +0.3 per chain link (cap +0.9)
+- Prerequisite vulnerability connections explicitly stated: +0.25 per dependency (cap +0.75)
 
 RECENCY WEIGHTING APPLIED TO ALL EVIDENCE:
 - Documents < 30 days old: x1.0 (full weight)
@@ -871,6 +905,7 @@ NARRATIVE REQUIREMENTS:
 - Use natural transitions between concepts
 - NEVER speculate or conflate CVE IDs
 - State "No evidence found" for missing data
+- RESERVED CVE RULE: If the CVE is in RESERVED state, explicitly state that status and avoid any technical or exploitation claims. Do not infer details.
 - Report only actual vulnerability data (no reserved candidates)
 - MANDATORY: Include the generated risk score prominently in the analysis
   - Explicitly explain how the score (value and uncertainty) was derived, citing the key drivers from evidence, popularity, technical exploitability, and EPSS
@@ -878,7 +913,7 @@ NARRATIVE REQUIREMENTS:
 REPORT STRUCTURE:
 - Opening: Vulnerability overview with key metrics (CVSS, CWE, EPSS), products, exploitation status
 - Exploitation Analysis: Real-world evidence, threat actors, methodology with confidence levels
-- Vulnerability Context: Related CVEs, exploit chains, vulnerability families
+- Vulnerability Context: Related CVEs (MANDATORY when present), co-exploitation/combined use when sources link CVEs as used together, attack chains only when explicitly evidenced, vulnerability families. Enumerate up to 6 related CVEs with short linkage reasons.
 - Remediation Guidance: Patches, configurations, detection strategies with priorities
 - Assessment Summary: Final section integrating the computed risk score with contextual explanation, risk evaluation with score justification, and actionable next steps
 
@@ -965,31 +1000,38 @@ CRITICAL WORKFLOW:
 1. Check prompt for CVE/bulletin IDs FIRST
 2. If IDs present: Use Vulners CVE/Bulletin tools directly
 3. If NO IDs: Use internet search to discover identifiers, then research with Vulners
-4. Research ALL related CVEs found in tool outputs
+4. Investigate a manageable subset of related CVEs when useful; do not assume they form a chain unless explicitly stated by sources. ALWAYS enumerate related CVEs discovered (up to 6) with short linkage reasons.
 5. Extract and research HIGH-VALUE bulletins (exploit docs, CISA alerts, vendor advisories)
 6. Provide complete technical profiles for analysis
 
-CVE CHAIN ANALYSIS REQUIREMENTS:
-- Extract ALL related CVE references from Vulners MCP data
-- Analyze CVE relationships and exploitation chains
-- Identify prerequisite vulnerabilities that enable exploitation
-- Map attack chains and vulnerability dependencies
-- Document how related CVEs connect to form exploitation pathways
-- Assess the impact of CVE chains on overall risk assessment
+RESERVED CVE WORKFLOW (MANDATORY):
+- If CVE is RESERVED:
+  - Explicitly report RESERVED status
+  - Parse related_documents; for any vendor advisories/bulletins present, fetch them via MCPVulnersBulletinTool and summarize only their contents
+  - Do NOT perform internet searches unless authoritative documents are linked in related_documents and need cross-checking
+  - If no linked documents, end with RESERVED status and no further details
+
+CVE RELATIONSHIP ANALYSIS (CONDITIONAL):
+- If sources link multiple CVEs as being used together in exploitation or campaigns, report co-exploitation/combined use and explain the linkage (shared vector, prerequisite environment, same actor/toolkit, or coordinated campaign).
+- Only mention or analyze stepwise exploitation chains when sources explicitly describe chain order or dependency.
+- Map attack chains and vulnerability dependencies only if supported by cited sources.
+- Do not infer chains from mere co-mentions of CVEs; prefer describing observed co-exploitation where applicable.
+- Investigate a manageable subset of related CVEs when useful, without assuming they form a chain.
+- Assess relationship impact on risk only when explicitly evidenced (co-exploitation or chain).
 
 TOOL USAGE RULES:
 - Tool calls MANDATORY - use only tool outputs
 - NEVER use hardcoded years - use relative terms only
 - NEVER conflate similar CVE IDs
-- Research ALL related document chains found in tool outputs
-- Extract and analyze ALL CVE relationships from Vulners MCP data
+- RESERVED CVE RULE: If the CVE is RESERVED, explicitly report that status and refrain from technical details unless present in sources
+- Research related documents and CVE relationships only when evidenced in Vulners MCP data; avoid assumptions
 
 TOOL SEQUENCE: Vulners tools FIRST when identifiers present, internet search FIRST when no identifiers.
 
 OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt (see RESEARCHER_RISK_OUTPUT_GUIDE).
 """,
-    expected_output='Complete vulnerability intelligence including: CVE data with metrics (CVSS, CWE, EPSS), bulletin analysis with patches, exploitation evidence, related documents, affected versions, CVE chain analysis with relationships and exploitation pathways, and remediation guidance from all sources. The last line must be a single-line RISK_INPUTS JSON object.',
+expected_output='Complete vulnerability intelligence including: CVE data with metrics (CVSS, CWE, EPSS), bulletin analysis with patches, exploitation evidence, related documents, affected versions, CVE relationship analysis (co-exploitation/combined use and, when explicitly evidenced, exploitation chains) with relationships and exploitation pathways, and remediation guidance from all sources. The last line must be a single-line RISK_INPUTS JSON object.',
     agent=vulnerability_researcher
 )
 
@@ -1005,7 +1047,11 @@ ANALYSIS FOCUS:
 4. TIMELINE CORRELATION: Map exploit availability against CVE disclosure dates using shared timestamps
 5. TECHNICAL ASSESSMENT: Categorize exploit types (PoC, weaponized, scanner) and complexity from shared document metadata
 6. SHADOWSERVER EXPLOITATION TIMELINE: Analyze ShadowServer items for earliest exploitation evidence
-7. CVE CHAIN ANALYSIS: Analyze related CVE relationships and exploitation chains from shared data
+7. CVE RELATIONSHIP ANALYSIS: Analyze related CVE relationships, including co-exploitation/combined use and, when explicitly evidenced, stepwise exploitation chains, from shared data. ALWAYS enumerate related CVEs when present (up to 6) with 3-8 word linkage reasons.
+
+RESERVED CVE GATING (MANDATORY):
+- If the shared CVE is RESERVED and the researcher provided no linked authoritative documents (vendor advisories/bulletins), immediately state RESERVED status and conclude; do not proceed with exploitation analysis.
+- If authoritative documents are linked and summarized by the researcher, limit analysis strictly to what those documents state; avoid inference.
 
 SHADOWSERVER ANALYSIS REQUIREMENTS:
 - Extract and summarize ShadowServer items from Vulners MCP exploitation_status data
@@ -1016,12 +1062,12 @@ SHADOWSERVER ANALYSIS REQUIREMENTS:
 - Cross-reference with other sources - don't dismiss earlier exploitation evidence from different sources
 - Provide timeline analysis showing progression from disclosure to active exploitation
 
-CVE CHAIN ANALYSIS REQUIREMENTS:
-- Examine related CVE references in Vulners MCP data
-- Identify exploitation chains and prerequisite vulnerabilities
-- Map how related CVEs connect to enable complex attacks
-- Assess the impact of CVE chains on exploitation feasibility
-- Document attack pathways that leverage multiple vulnerabilities
+CVE RELATIONSHIP ANALYSIS (CONDITIONAL):
+- If sources in the shared data link multiple CVEs as used together, report co-exploitation/combined use and describe the relationship.
+- Analyze stepwise exploitation chains only when explicitly indicated by sources in the shared data; identify chain links and prerequisite vulnerabilities.
+- Map connections enabling complex attacks only with cited evidence.
+- Avoid assuming chains from related CVE lists alone; prefer co-exploitation language where appropriate.
+- Assess exploitation feasibility impact only when relationship evidence exists (co-exploitation or chain).
 
 EFFICIENCY RULE: Work exclusively with previously collected intelligence - no additional Vulners queries needed if this ID has already been researched.
 TOOL USAGE: Use Vulners MCP tools FIRST for referenced documents if IDs are present in the context, then internet search for additional technical details.
@@ -1029,8 +1075,8 @@ TOOL USAGE: Use Vulners MCP tools FIRST for referenced documents if IDs are pres
 OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt.
 
-DELIVERABLES: Exploitation status, EPSS assessment, exploit availability analysis with recency context, CVE chain relationships, and risk assessment based on shared data.""",
-    expected_output='Exploit intelligence summary with exploitation status, EPSS evaluation, exploit documents analysis, ShadowServer exploitation timeline with earliest occurrences, CVE chain analysis with relationships and exploitation pathways, and risk assessment based on shared Vulners MCP data. The last line must be a single-line RISK_INPUTS JSON object.',
+DELIVERABLES: Exploitation status, EPSS assessment, exploit availability analysis with recency context, concise related CVE enumeration with linkage reasons (up to 6), and (when explicitly evidenced) CVE chain relationships, plus risk assessment based on shared data.""",
+    expected_output='Exploit intelligence summary with exploitation status, EPSS evaluation, exploit documents analysis, ShadowServer exploitation timeline with earliest occurrences, conditional CVE chain analysis only when explicitly evidenced, and risk assessment based on shared Vulners MCP data. The last line must be a single-line RISK_INPUTS JSON object.',
     agent=exploit_researcher
 )
 
@@ -1202,12 +1248,12 @@ DATA SOURCE: Use ONLY the outputs from: vulnerability_researcher (Vulners MCP da
 SYNTHESIS REQUIREMENTS:
 1. Integrate exact technical metrics (CVSS, CWE, EPSS with precise values) from shared Vulners data
 2. Compile exploitation evidence from shared exploit analysis including ShadowServer exploitation timeline and earliest occurrences
-3. Include comprehensive CVE chain analysis from shared intelligence:
-   - Document ALL related CVE relationships and connections
-   - Explain how CVEs link together to form exploitation chains
-   - Identify prerequisite vulnerabilities that enable attacks
-   - Map attack pathways leveraging multiple vulnerabilities
-   - Assess the impact of CVE chains on overall risk assessment
+3. Include CVE relationship analysis from shared intelligence:
+   - Document related CVE relationships and connections when sources link them (co-exploitation/combined use) or explicitly describe chains
+   - Explain how CVEs are used together in campaigns or toolkits when sources state it; only explain stepwise chains when documented
+   - Identify prerequisite vulnerabilities that enable attacks only with explicit citations
+   - Map attack pathways leveraging multiple vulnerabilities only when supported by evidence
+   - Assess the impact of co-exploitation or chains on overall risk assessment only when relationship evidence exists
 4. Document remediation steps with exact versions and configurations from shared sources
 5. Provide detection mechanisms and monitoring guidance from shared research
 6. MANDATORY: Integrate the generated risk score prominently in the analysis
@@ -1229,7 +1275,7 @@ REPORT FORMAT: Flowing narrative paragraphs (NOT bullet points), 6-8 paragraphs 
 - Exploitation Analysis: EPSS assessment, ShadowServer exploitation timeline with earliest occurrences, exploit availability, and technical details from shared analysis
 - Technical Exploitation Details: When available, detailed exploitation methodologies, code examples, and technical analysis from the Technical Exploitation Analyst
 - Threat Intelligence & TTPs: Detailed analysis of threat actor attribution, attack campaigns, adversary TTPs with MITRE ATT&CK mappings, exploitation methodologies, and observed attack patterns from shared research
-- CVE Chain Analysis: Detailed analysis of related CVE relationships, exploitation chains, attack pathways, and interconnected vulnerabilities from shared intelligence
+- CVE Relationship Analysis: Detailed analysis of related CVE relationships, including co-exploitation/combined use, and stepwise exploitation chains ONLY when explicitly evidenced in shared intelligence; otherwise, focus on individual CVEs without assuming chains
 - Remediation Guidance: Specific patches and mitigation strategies prioritized by risk score from shared sources, emphasizing current availability
 - Closing Assessment: Risk evaluation with score justification and priority recommendations
 
@@ -1243,7 +1289,7 @@ RISK SCORE INTEGRATION:
 EFFICIENCY RULE: Work exclusively with previously collected intelligence - no additional queries needed.
 
 QUALITY: Every claim traceable to shared task outputs, no speculation, focus on actionable intelligence, risk score prominently featured.""",
-    expected_output='Comprehensive vulnerability analysis report in flowing narrative paragraphs, integrating all shared research findings including detailed CVE chain analysis, ShadowServer exploitation timeline with earliest occurrences, comprehensive TTP analysis with MITRE ATT&CK mappings, and threat intelligence, with evidence-based assessments, prominently featuring the quantitative risk score, and providing actionable recommendations prioritized by risk level.',
+    expected_output='Comprehensive vulnerability analysis report in flowing narrative paragraphs, integrating all shared research findings including detailed CVE relationship analysis (co-exploitation/combined use and explicitly evidenced chains), ShadowServer exploitation timeline with earliest occurrences, comprehensive TTP analysis with MITRE ATT&CK mappings, and threat intelligence, with evidence-based assessments, prominently featuring the quantitative risk score, and providing actionable recommendations prioritized by risk level.',
     agent=analyst
 )
 
