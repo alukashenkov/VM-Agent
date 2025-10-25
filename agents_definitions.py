@@ -16,6 +16,11 @@ from crewai_tools import MCPServerAdapter, SerperDevTool
 import litellm
 from typing import Dict, List, Optional
 
+import sys
+import io
+import threading
+import time
+
 # Custom LiteLLM wrapper for CrewAI compatibility
 class ChatLiteLLM:
     def __init__(self, model: str = "gpt-4o", temperature: float = 0.7, max_retries: int = 3,
@@ -96,11 +101,27 @@ def get_mcp_tools():
         print("   Example: http://localhost:8000/mcp (standard) or http://localhost:8000/sse (FastMCP 2.0)")
         return []
     
+    # Suppress stderr temporarily to prevent messy stack traces from background threads
+    original_stderr = sys.stderr
+    connection_failed = [False]  # Use list for mutability in nested function
+    
+    # Install thread exception handler to catch background thread errors silently
+    def thread_exception_handler(args):
+        # Always silently mark connection as failed
+        connection_failed[0] = True
+        # Never print thread exceptions to keep logs clean
+    
+    original_threading_excepthook = threading.excepthook
+    threading.excepthook = thread_exception_handler
+    
     try:
         # Use URL as provided (should include full endpoint path like /mcp or /sse)
         mcp_endpoint = mcp_url
         
         print(f"   Connecting to: {mcp_endpoint}")
+        
+        # Always suppress stderr during connection attempt to prevent messy output
+        sys.stderr = io.StringIO()
         
         # Configure MCP server parameters for streamable HTTP transport
         server_params = {
@@ -110,8 +131,22 @@ def get_mcp_tools():
         
         # Create and enter the MCP adapter context
         # Keep it alive by storing in global variable
-        _mcp_adapter = MCPServerAdapter(server_params, connect_timeout=30)
+        _mcp_adapter = MCPServerAdapter(server_params, connect_timeout=10)
         mcp_tools = _mcp_adapter.__enter__()
+        
+        # Give the connection a moment to establish or fail
+        # This helps catch async errors from background threads
+        time.sleep(0.5)
+        
+        # Restore stderr after connection attempt
+        sys.stderr = original_stderr
+        
+        # Check if connection failed in background thread
+        if connection_failed[0]:
+            print(f"⚠️  Could not connect to MCP server at {mcp_url}")
+            print("   Please ensure the Vulners MCP server is running")
+            print("   → Continuing with internet search tools only")
+            return []
         
         if mcp_tools:
             print(f"✅ Discovered {len(mcp_tools)} tools from MCP server:")
@@ -120,16 +155,24 @@ def get_mcp_tools():
             _mcp_tools_cache = list(mcp_tools)
             return _mcp_tools_cache
         else:
-            print("   No tools found from MCP server")
+            print("⚠️  No tools found from MCP server")
+            print("   Continuing with internet search only")
             return []
                 
     except Exception as e:
-        print(f"⚠️  Failed to connect to MCP server: {e}")
-        print("   Agents will use internet search only")
-        if DEBUG_ENABLED:
-            import traceback
-            traceback.print_exc()
+        # Restore stderr in case of error
+        sys.stderr = original_stderr
+        
+        # Provide clean, actionable message only
+        print(f"⚠️  Could not connect to MCP server at {mcp_url}")
+        print("   Please ensure the Vulners MCP server is running")
+        print("   → Continuing with internet search tools only")
+        
         return []
+    finally:
+        # Always restore stderr and threading excepthook
+        sys.stderr = original_stderr
+        threading.excepthook = original_threading_excepthook
 
 # =============================================================================
 # TOOL DEFINITIONS

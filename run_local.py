@@ -64,6 +64,7 @@ def run_web():
     
     # Import here to ensure environment is loaded first
     from web_app import app
+    import threading
     
     debug_mode = os.getenv('DEBUG', 'False').lower() == 'true'
     # Read host/port from environment with sensible defaults
@@ -76,7 +77,19 @@ def run_web():
     print(f"Web interface will be available at: http://{host}:{port}")
     print(f"Debug mode: {debug_mode}")
     
-    # Open browser automatically (single tab)
+    # Start the Flask server in a background thread
+    def start_server():
+        # Force debug=False to prevent duplicate tabs
+        app.run(host=host, port=port, debug=False, threaded=True, use_reloader=False)
+    
+    server_thread = threading.Thread(target=start_server, daemon=True)
+    server_thread.start()
+    
+    # Give the server a moment to start
+    print("⏳ Waiting for server to start...")
+    time.sleep(2)
+    
+    # Open browser automatically after server is ready (single tab)
     try:
         # Always open localhost for convenience even if host is 0.0.0.0
         webbrowser.open(f'http://localhost:{port}')
@@ -85,11 +98,11 @@ def run_web():
         print(f"⚠️  Could not open browser automatically: {e}")
         print(f"Please manually open: http://localhost:{port}")
     
-    # Give the server a moment to start
-    time.sleep(1)
-    
-    # Force debug=False to prevent duplicate tabs
-    app.run(host=host, port=port, debug=False, threaded=True)
+    # Keep the main thread alive
+    try:
+        server_thread.join()
+    except KeyboardInterrupt:
+        print("\n👋 Shutting down...")
 
 def main():
     print("🚀 Vulners AI Agent - Local Development Runner")
