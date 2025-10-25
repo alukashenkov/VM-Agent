@@ -12,7 +12,6 @@ Agents, tools, and tasks have been moved to agents_definitions.py for better org
 # IMPORTS AND ENVIRONMENT SETUP
 # =============================================================================
 
-
 import os
 import logging
 import json
@@ -22,12 +21,12 @@ from dotenv import load_dotenv
 from crewai import Crew
 from contextlib import contextmanager
 
-# Import agent definitions, tools, and tasks from separate module
-from agents_definitions import base_crew
-
 # Disable CrewAI telemetry to prevent connection timeout errors - MUST be set before any CrewAI imports
 os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"  # Additional telemetry disable for OpenTelemetry
+
+# Import agent definitions, tools, and tasks from separate module
+from agents_definitions import base_crew
 
 # Load environment variables from .env file
 load_dotenv()

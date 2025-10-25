@@ -11,12 +11,10 @@ Separated from the main execution file for better organization and maintainabili
 # =============================================================================
 
 import os
-import json
-import requests
 from crewai import Agent, Task, Crew, Process
-from crewai.tools import BaseTool
+from crewai_tools import MCPServerAdapter, SerperDevTool
 import litellm
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 # Custom LiteLLM wrapper for CrewAI compatibility
 class ChatLiteLLM:
@@ -75,252 +73,102 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # Can be overridden via envi
 MODEL_NAME = _canonicalize_openai_model_name(OPENAI_MODEL)
 
 # =============================================================================
-# TOOL DEFINITIONS (descriptions colocated with classes)
+# MCP SERVER CONFIGURATION & TOOL DISCOVERY
 # =============================================================================
 
-# CVE Search Tool 
-MCP_VULNERS_CVE_TOOL_DESCRIPTION = """\
-Searches the Vulners database for comprehensive CVE vulnerability information using structured MCP integration.
+# Global MCP adapter - keeps connection open for the lifetime of the application
+_mcp_adapter = None
+_mcp_tools_cache = []
 
-CRITICAL INPUT FORMAT:
-- Input parameter: cve_id (string)
-- MUST be exactly a CVE identifier like 'CVE-2025-54309'
-- DO NOT pass JSON objects, arrays, or complex data structures
-- Example: cve_id="CVE-2025-53770"
-
-Returns complete technical data including CVSS vectors, CWE classifications, EPSS scores, exploitation intelligence, affected products, and related documents. Use for primary CVE vulnerability research."""
-
-class MCPVulnersCVETool(BaseTool):
-    """Tool for searching CVE vulnerability information using Vulners MCP."""
-
-    name: str = "Vulners CVE Search Tool"
-    description: str = MCP_VULNERS_CVE_TOOL_DESCRIPTION
-
-    def _run(self, cve_id: str) -> str:
-        """Uses MCP Vulners tool to get CVE details with structured JSON input/output."""
-        try:
-            # Input validation
-            if not cve_id or not isinstance(cve_id, str):
-                return json.dumps({"error": "CVE ID must be a non-empty string"})
-
-            # Basic CVE format validation
-            if not cve_id.startswith("CVE-"):
-                return json.dumps({"error": f"Invalid CVE format: {cve_id}. Must start with 'CVE-'"})
-
-            # Use MCP tool with structured JSON input
-            # Get MCP server configuration strictly from environment (no hard-coded defaults)
-            mcp_host = os.getenv("VULNERS_MCP_HOST")
-            mcp_port = os.getenv("VULNERS_MCP_PORT")
-            if not mcp_host or not mcp_port:
-                return json.dumps({
-                    "error": "Vulners MCP configuration missing",
-                    "details": "VULNERS_MCP_HOST and VULNERS_MCP_PORT must be set in environment",
-                    "action": "Set these in your .env or environment and retry"
-                })
-            url = f"http://{mcp_host}:{mcp_port}/vulners_cve_info"
-            headers = {'accept': 'application/json'}
-            payload = {"cve_id": cve_id}
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
-            result = response.json()
-
-            # The MCP tool returns structured JSON, so we can return it directly
-            return json.dumps(result)
-
-        except requests.exceptions.HTTPError as http_err:
-            return json.dumps({"error": f"HTTP error occurred: {http_err}. Status code: {response.status_code}"})
-        except requests.exceptions.ConnectionError as conn_err:
-            return json.dumps({
-                "error": "Vulners Server Not Available",
-                "status": "The Vulners database is currently unavailable for vulnerability research",
-                "impact": "Cannot retrieve CVE details, CVSS scores, or related security bulletins from Vulners",
-                "alternative_approach": "Continue analysis using internet search tools for vulnerability information",
-                "user_action_required": "The user needs to start the Vulners server to enable database access"
-            })
-        except requests.exceptions.Timeout as timeout_err:
-            return json.dumps({"error": f"Request timeout after 60 seconds for CVE {cve_id}: {timeout_err}"})
-        except requests.exceptions.RequestException as err:
-            return json.dumps({"error": f"Request error for CVE {cve_id}: {type(err).__name__}: {err}"})
-        except Exception as err:
-            return json.dumps({"error": f"Vulners tool error: {err}"})
-
-# Bulletin Search Tool 
-MCP_VULNERS_BULLETIN_TOOL_DESCRIPTION = """\
-Searches the Vulners database for comprehensive information on security bulletins, advisories, and vendor patches using structured MCP integration.
-
-CRITICAL INPUT FORMAT:
-- Input parameter: bulletin_id (string)
-- MUST be exactly a bulletin identifier like 'RHSA-2025:11803', 'GHSA-abcd-1234-efgh', 'USN-7676-1', 'MSB-MS25-001', 'KB5002754' or any other supported bulletin identifier
-- DO NOT pass JSON objects, arrays, or complex data structures
-- Example: bulletin_id="GHSA-xx4q-4v7g-9x8m" or bulletin_id="RHSA-2025:11803" or bulletin_id="USN-7676-1" or bulletin_id="MSB-MS25-001" or bulletin_id="KB5002754" or bulletin_id="MSB-2025-001" or other supported bulletin identifiers
-
-Returns detailed information including: full descriptions, official vendor links, patch details, affected versions, remediation guidance, and related CVEs.
-
-CRITICAL USAGE RULE: Only use bulletin IDs that appear in CVE Search Tool results.
-NEVER invent, guess, or construct bulletin IDs. Extract exact bulletin IDs from CVE tool output only.
-
-BULLETIN ID SOURCE VALIDATION:
-- ONLY USE: Bulletin IDs that appear in CVE search results [RELATED_DOCUMENTS] section
-- NEVER USE: URLs, CVE IDs, descriptive text, or invented identifiers
-- SOURCE: Extract exact bulletin IDs from CVE tool output only
-
-MANDATORY for researching vendor patches, security updates, and comprehensive remediation guidance found in CVE reference sections."""
-
-class MCPVulnersBulletinTool(BaseTool):
-    """Tool for searching security bulletins using Vulners MCP."""
-
-    name: str = "Vulners Bulletin Search Tool"
-    description: str = MCP_VULNERS_BULLETIN_TOOL_DESCRIPTION
-
-    def _run(self, bulletin_id: str) -> str:
-        """Uses MCP Vulners tool to get bulletin details with structured JSON input/output."""
-        try:
-            # Input validation
-            if not bulletin_id or not isinstance(bulletin_id, str):
-                return json.dumps({"error": "Bulletin ID must be a non-empty string"})
-
-            # Basic validation - only reject obvious non-bulletin-IDs
-            if bulletin_id.startswith(('http://', 'https://')):
-                return json.dumps({"error": f"Invalid bulletin ID: {bulletin_id}. URLs are not bulletin IDs. Use only bulletin identifiers that appear in CVE search results [RELATED_DOCUMENTS] section."})
-
-            if bulletin_id.startswith('CVE-'):
-                return json.dumps({"error": f"Invalid bulletin ID: {bulletin_id}. CVE IDs are not bulletin IDs. Use only bulletin identifiers that appear in CVE search results [RELATED_DOCUMENTS] section."})
-
-            # Use MCP tool with structured JSON input
-            # Get MCP server configuration strictly from environment (no hard-coded defaults)
-            mcp_host = os.getenv("VULNERS_MCP_HOST")
-            mcp_port = os.getenv("VULNERS_MCP_PORT")
-            if not mcp_host or not mcp_port:
-                return json.dumps({
-                    "error": "Vulners MCP configuration missing",
-                    "details": "VULNERS_MCP_HOST and VULNERS_MCP_PORT must be set in environment",
-                    "action": "Set these in your .env or environment and retry"
-                })
-            url = f"http://{mcp_host}:{mcp_port}/vulners_bulletin_info"
-            headers = {'accept': 'application/json'}
-            payload = {"bulletin_id": bulletin_id}
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            response.raise_for_status()
-            result = response.json()
-
-            # The MCP tool returns structured JSON, so we can return it directly
-            return json.dumps(result)
-
-        except requests.exceptions.HTTPError as http_err:
-            return json.dumps({"error": f"HTTP error occurred: {http_err}. Status code: {response.status_code}"})
-        except requests.exceptions.ConnectionError as conn_err:
-            return json.dumps({
-                "error": "Vulners Server Not Available",
-                "status": "The Vulners database is currently unavailable for vulnerability research",
-                "impact": "Cannot retrieve bulletin details from Vulners database",
-                "alternative_approach": "Continue analysis using internet search tools for vulnerability information",
-                "user_action_required": "The user needs to start the Vulners server to enable database access"
-            })
-        except requests.exceptions.Timeout as timeout_err:
-            return json.dumps({"error": f"Request timeout after 60 seconds for bulletin {bulletin_id}: {timeout_err}"})
-        except requests.exceptions.RequestException as err:
-            return json.dumps({"error": f"Request error for bulletin {bulletin_id}: {type(err).__name__}: {err}"})
-        except Exception as err:
-            return json.dumps({"error": f"Vulners tool error: {err}"})
-
-# Internet Search Tool 
-SEARCH_TOOL_DESCRIPTION = """\
-Powerful internet search tool for gathering threat intelligence and vulnerability information from web sources.
-
-CAPABILITIES:
-- Search for recent vulnerability information and security news
-- Find CVE identifiers and security advisories from online sources
-- Research threat actor attribution and attack campaigns
-- Gather industry security reports and analysis
-- Discover vendor patches and security updates
-
-USES:
-- Identifier discovery when specific CVE IDs are not provided
-- Threat intelligence research and adversary attribution
-- Security news and vulnerability trend analysis
-- Vendor advisory and patch information gathering
-
-IMPORTANT: Use when no specific identifiers are available in the prompt to discover recent security information."""
-
-class SerperSearchTool(BaseTool):
-    """Direct Serper API integration for reliable internet search."""
-
-    name: str = "Internet Search Tool"
-    description: str = SEARCH_TOOL_DESCRIPTION
-
-    def _run(self, query: str) -> str:
-        """Execute internet search using direct Serper API calls."""
-
-        # Handle both string and dict inputs for compatibility
-        if isinstance(query, dict):
-            # Extract query from dict if passed as dict
-            actual_query = query.get('description', query.get('query', ''))
-            if not actual_query:
-                return "Error: No valid query found in input dictionary"
+def get_mcp_tools():
+    """Get tools from MCP server using CrewAI's built-in MCPServerAdapter."""
+    global _mcp_adapter, _mcp_tools_cache
+    
+    # Return cached tools if already initialized
+    if _mcp_tools_cache:
+        return _mcp_tools_cache
+    
+    mcp_url = os.getenv("VULNERS_MCP_URL")
+    
+    if not mcp_url:
+        print("⚠️  VULNERS_MCP_URL not set. MCP tools will not be available.")
+        print("   Set VULNERS_MCP_URL in your .env file")
+        print("   Example: http://localhost:8000/mcp (standard) or http://localhost:8000/sse (FastMCP 2.0)")
+        return []
+    
+    try:
+        # Use URL as provided (should include full endpoint path like /mcp or /sse)
+        mcp_endpoint = mcp_url
+        
+        print(f"   Connecting to: {mcp_endpoint}")
+        
+        # Configure MCP server parameters for streamable HTTP transport
+        server_params = {
+            "url": mcp_endpoint,
+            "transport": "streamable-http"
+        }
+        
+        # Create and enter the MCP adapter context
+        # Keep it alive by storing in global variable
+        _mcp_adapter = MCPServerAdapter(server_params, connect_timeout=30)
+        mcp_tools = _mcp_adapter.__enter__()
+        
+        if mcp_tools:
+            print(f"✅ Discovered {len(mcp_tools)} tools from MCP server:")
+            for tool in mcp_tools:
+                print(f"   - {tool.name}")
+            _mcp_tools_cache = list(mcp_tools)
+            return _mcp_tools_cache
         else:
-            actual_query = query
+            print("   No tools found from MCP server")
+            return []
+                
+    except Exception as e:
+        print(f"⚠️  Failed to connect to MCP server: {e}")
+        print("   Agents will use internet search only")
+        if DEBUG_ENABLED:
+            import traceback
+            traceback.print_exc()
+        return []
 
-        # Check for API key
-        api_key = os.getenv('SERPER_API_KEY')
-        if not api_key:
-            return f"Internet search tool is not available. Search query was: '{actual_query}'. SERPER_API_KEY environment variable is not set. Please add it to your .env file."
+# =============================================================================
+# TOOL DEFINITIONS
+# =============================================================================
 
-        # Direct API call
-        return self._direct_serper_search(actual_query)
+# Web Search Tool - CrewAI native implementation using SerperDevTool
+def get_crewai_web_search_tool():
+    """Get CrewAI's native SerperDevTool instance for web search capabilities."""
+    api_key = os.getenv('SERPER_API_KEY')
+    if not api_key:
+        # Return None if no API key - agents will handle gracefully
+        return None
+    
+    try:
+        # Return the SerperDevTool directly - CrewAI handles it natively
+        return SerperDevTool()
+    except Exception as e:
+        print(f"⚠️  Failed to initialize SerperDevTool: {e}")
+        return None
 
-    def _direct_serper_search(self, query: str) -> str:
-        """Make direct API call to Serper."""
-        import requests
+# =============================================================================
+# INITIALIZE MCP TOOLS
+# =============================================================================
 
-        api_key = os.getenv('SERPER_API_KEY')
-        if not api_key:
-            return f"Serper API key not found. Query: '{query}'"
+# Discover MCP tools at module load time
+print("\n🔍 Discovering MCP tools...")
+MCP_TOOLS = get_mcp_tools()
+print(f"✅ MCP tools initialized: {len(MCP_TOOLS)} tools available\n")
 
-        try:
-            url = "https://google.serper.dev/search"
-            headers = {
-                'X-API-KEY': api_key,
-                'Content-Type': 'application/json'
-            }
-            payload = {
-                "q": query,
-                "num": 5  # Get 5 results
-            }
-
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                data = response.json()
-
-                # Format the results
-                results = []
-                if 'organic' in data:
-                    for i, result in enumerate(data['organic'][:5], 1):
-                        title = result.get('title', 'No title')
-                        link = result.get('link', 'No link')
-                        snippet = result.get('snippet', 'No description')
-                        results.append(f"{i}. **{title}**\n   Link: {link}\n   {snippet}\n")
-
-                if results:
-                    return f"Search Query: '{query}'\n\nSearch Results:\n" + "\n".join(results)
-                else:
-                    return f"Search completed for '{query}' but no results found."
-
-            elif response.status_code == 401:
-                return f"Serper API error: Unauthorized (401). Your SERPER_API_KEY is invalid. Query: '{query}'"
-            elif response.status_code == 403:
-                return f"Serper API error: Forbidden (403). Check your Serper API subscription. Query: '{query}'"
-            elif response.status_code == 429:
-                return f"Serper API error: Rate limit exceeded (429). Try again later. Query: '{query}'"
-            else:
-                return f"Serper API error: {response.status_code}. Query: '{query}'"
-
-        except requests.exceptions.Timeout:
-            return f"Serper API request timed out. Query: '{query}'"
-        except requests.exceptions.RequestException as e:
-            return f"Serper API request failed: {e}. Query: '{query}'"
-        except Exception as e:
-            return f"Unexpected error during search: {e}. Query: '{query}'"
+# Initialize web search tools
+print("🔍 Initializing web search tools...")
+WEB_SEARCH_TOOLS = []
+crewai_search = get_crewai_web_search_tool()
+if crewai_search:
+    WEB_SEARCH_TOOLS.append(crewai_search)
+    print("✅ CrewAI web search tool initialized")
+else:
+    print("⚠️  CrewAI web search not available (SERPER_API_KEY not set)")
+print()
 
 # =============================================================================
 # AGENT DEFINITIONS
@@ -401,7 +249,8 @@ RESEARCHER_PROMPT = """\
 You are a Senior Vulnerability Researcher. Execute research plans by gathering comprehensive vulnerability intelligence from Vulners database and internet sources.
 
 CRITICAL RULES:
-- TOOL USAGE MANDATORY: Always call Vulners tools FIRST when CVE/bulletin IDs are present
+- TOOL DISCOVERY: Examine available tool descriptions to identify which tools can query CVE data and security bulletins from Vulners database
+- TOOL USAGE MANDATORY: Always call Vulners database tools FIRST when CVE/bulletin IDs are present
 - NO IDENTIFIER HALLUCINATION: Only use exact IDs from tool outputs or prompt
 - ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025) - use relative terms only
 - NEVER conflate similar CVE IDs - each is a distinct vulnerability
@@ -413,32 +262,35 @@ CRITICAL RULES:
 
 WORKFLOW:
 1. Check prompt for CVE/bulletin IDs FIRST
-2. If IDs present: Use Vulners CVE/Bulletin tools directly
-3. If NO IDs: Use internet search to discover identifiers, then research with Vulners
+2. If IDs present: Use Vulners database tools directly (check tool descriptions to find CVE/bulletin query tools)
+3. If NO IDs: Use internet search to discover identifiers, then research with Vulners tools
 4. Consider investigating related CVEs found in tool outputs when the number is manageable; if sources link multiple CVEs in exploitation or campaigns, report co-exploitation/combined use and explain why they are related; only call it an exploitation chain when explicitly stated by sources. ALWAYS enumerate related CVEs discovered (up to 6) with short linkage reasons.
 5. Extract and research HIGH-VALUE bulletins (exploit docs, CISA alerts, vendor advisories)
 6. Provide complete technical profiles for analysis
 
 STRICT TOOL SEQUENCE (MANDATORY COMPLETION GATE):
 - Always perform in this order when CVE ID is known:
-  1) MCPVulnersCVETool → get CVE data
-  2) Parse related_documents
-  3) For EACH vendor advisory/bulletin found, call MCPVulnersBulletinTool by exact bulletin_id
+  1) Use CVE query tool → get CVE data
+  2) Parse the returned data for related documents/bulletins (look for fields containing document references, bulletin IDs, or security advisories)
+  3) For EACH vendor advisory/bulletin found, call the bulletin query tool with the exact bulletin identifier
   4) Only after all linked bulletins are processed may you proceed to optional internet search (if needed)
-- Do NOT finish the task before processing all linked vendor advisories/bulletins present in related_documents
+- Do NOT finish the task before processing all linked vendor advisories/bulletins present in the CVE data
 
 VENDOR ADVISORY ACCESS (MANDATORY):
-- When the CVE tool returns related_documents that include vendor advisories/bulletins, retrieve them using MCPVulnersBulletinTool by exact bulletin_id to obtain authoritative details.
-- Base technical product/version/patch information primarily on vendor advisories when available.
+- When CVE data includes related documents/advisories/bulletins, retrieve them using the bulletin query tool to obtain authoritative details
+- Base technical product/version/patch information primarily on vendor advisories when available
 
 RESERVED CVE HANDLING (MANDATORY):
 - If the CVE is RESERVED:
   - Explicitly state that status at the start of your output
-  - STILL parse related_documents and fetch any vendor advisories, vendor bulletins, or other authoritative references via MCPVulnersBulletinTool
+  - STILL parse returned data for related documents and fetch any vendor advisories, vendor bulletins, or other authoritative references
   - Summarize only what those authoritative documents state; do NOT infer any missing technical details, metrics, exploitation status, or impact
   - If no related documents exist, do NOT perform internet searches; simply report the RESERVED status and lack of public details
 
-TOOL FORMAT: Always use simple strings - cve_id="CVE-XXXX-XXXXX" or bulletin_id="BULLETIN-ID"
+DATA EXTRACTION APPROACH:
+- Do NOT assume specific field names in tool responses
+- Search for needed information concepts: look for CVSS scores (any field containing "cvss" or "score"), exploitation indicators (fields about "exploit", "wild", "active"), affected products (fields about "affected", "product", "vendor"), related documents (fields about "document", "bulletin", "advisory", "reference")
+- Be flexible: risk scores may be in different formats, dates may be in various fields, products may be listed in different structures
 
 DELEGATION: Use "Ask question to coworker" format when needed, with EXACT coworker names."""
 
@@ -467,7 +319,7 @@ vulnerability_researcher = Agent(
     backstory=RESEARCHER_PROMPT,
     verbose=DEBUG_ENABLED,
     allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
+    tools=MCP_TOOLS + WEB_SEARCH_TOOLS,  # MCP-discovered tools + web search
     llm=vulnerability_researcher_llm,
     cache=True
 )
@@ -484,10 +336,10 @@ exploit_researcher_llm = create_llm_with_config(exploit_researcher_llm_config)
 
 # Exploit Researcher prompt near the agent declaration
 EXPLOIT_RESEARCHER_PROMPT = """\
-You are an Exploit Intelligence Analyst. Analyze exploitation status, EPSS scores, and exploit documents from SHARED Vulners MCP data collected by the Senior Vulnerability Researcher.
+You are an Exploit Intelligence Analyst. Analyze exploitation status, EPSS scores, and exploit documents from SHARED Vulners data collected by the Senior Vulnerability Researcher.
 
 CRITICAL PRINCIPLES:
-- Use ONLY shared Vulners MCP data from previous research tasks - NO tool calls
+- Use ONLY shared Vulners data from previous research tasks - NO tool calls
 - NEVER conflate different CVE IDs
   - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
 - RESERVED CVE RULE: If the CVE is in RESERVED state, explicitly state that status and avoid any technical or exploitation claims. Do not infer details.
@@ -496,27 +348,27 @@ CRITICAL PRINCIPLES:
 - Extract data from vulnerability_researcher's tool outputs
 - PRIORITIZE RECENCY: Always evaluate document publication dates and prioritize the most recent information
 
-DATA SOURCE: All Vulners MCP data has been collected by the Senior Vulnerability Researcher. Analyze their tool outputs for:
-- CVE data with exploitation_status fields
-- EPSS scores and percentiles from epss_score sections
-- Related documents with type classifications and PUBLICATION DATES
-- Affected products and technical details
-- Current patch availability status
+DATA SOURCE: All Vulners data has been collected by the Senior Vulnerability Researcher. Analyze their tool outputs for:
+- CVE data with exploitation indicators (search for fields containing "exploit", "wild", "active", "kev", "shadowserver")
+- Risk prediction scores (search for fields containing "epss", "score", "percentile", "probability")
+- Related documents with type classifications and PUBLICATION DATES (search for fields containing "document", "bulletin", "advisory", "published", "date")
+- Affected products and technical details (search for fields containing "affected", "product", "vendor", "version")
+- Current patch availability status (search for fields containing "patch", "solution", "workaround", "mitigation")
 
 RECENCY-AWARE ANALYSIS METHODOLOGY:
-1. EXPLOITATION STATUS: Extract WILD_EXPLOITED status, sources, and confidence levels from shared CVE data
-2. EPSS EVALUATION: Analyze scores and percentiles from shared data (High: >0.7, Medium: 0.4-0.7, Low: <0.4)
-3. EXPLOIT DOCUMENTS: Filter TYPE=exploit entries from related_documents, assess credibility, technical depth, and RECENCY
-4. TIMELINE CORRELATION: Map exploit availability against CVE disclosure dates using shared timestamps
+1. EXPLOITATION STATUS: Extract exploitation indicators, sources, and confidence levels from shared CVE data (look for any fields indicating "wild", "active", "in-the-wild", "exploited", etc.)
+2. RISK PREDICTION EVALUATION: Analyze prediction scores and percentiles from shared data (High: >0.7, Medium: 0.4-0.7, Low: <0.4) - search for EPSS or similar risk scoring fields
+3. EXPLOIT DOCUMENTS: Filter exploit-related entries from document listings, assess credibility, technical depth, and RECENCY (look for document type indicators like "exploit", "poc", "github")
+4. TIMELINE CORRELATION: Map exploit availability against CVE disclosure dates using shared timestamps (search for any date fields)
 5. TECHNICAL ASSESSMENT: Categorize exploit types (PoC, weaponized, scanner) and complexity from document metadata
-6. SHADOWSERVER EXPLOITATION TIMELINE: Analyze ShadowServer items for earliest exploitation evidence
+6. SHADOWSERVER EXPLOITATION TIMELINE: Analyze ShadowServer/monitoring data for earliest exploitation evidence (search for "shadowserver", "honeypot", "sensor", "telemetry")
 7. PATCH STATUS EVALUATION: Check for recent patches that may have become available since initial disclosure
 
-SHADOWSERVER ANALYSIS METHODOLOGY:
-- Extract ShadowServer items from Vulners MCP exploitation_status.shadowserver_items
+SHADOWSERVER/TELEMETRY ANALYSIS METHODOLOGY:
+- Extract monitoring/telemetry items from shared data (look for "shadowserver", "sensor", "honeypot", "telemetry" fields)
 - Focus on earliest exploitation timestamps and geographic distribution
 - Document first observed exploitation dates vs. vulnerability disclosure dates
-- Identify exploitation patterns from ShadowServer telemetry data
+- Identify exploitation patterns from telemetry data
 - Cross-reference with other exploitation evidence sources
 - Provide comprehensive timeline analysis prioritizing earliest occurrences
 - Don't dismiss earlier exploitation evidence from non-ShadowServer sources
@@ -552,7 +404,7 @@ exploit_researcher = Agent(
     backstory=EXPLOIT_RESEARCHER_PROMPT,
     verbose=DEBUG_ENABLED,
     allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
+    tools=MCP_TOOLS + WEB_SEARCH_TOOLS,  # MCP-discovered tools + web search
     llm=exploit_researcher_llm,
     cache=True
 )
@@ -575,10 +427,10 @@ ROLE: When vulnerabilities show ample exploitation evidence, retrieve and analyz
 
 CRITICAL PRINCIPLES:
 - Tool usage MANDATORY: Use ALL available tools:
-  - MCPVulnersCVETool to fetch CVE data and related_documents
-  - MCPVulnersBulletinTool to retrieve full documents by bulletin_id
-  - SerperSearchTool (internet) to fill gaps not covered by Vulners
-- Always start with Vulners CVE → parse related_documents → fetch bulletins → THEN search internet for missing technical details
+  - Vulners CVE query tool to fetch CVE data and related documents (examine tool descriptions to identify the appropriate tool)
+  - Vulners bulletin query tool to retrieve full documents by identifier (examine tool descriptions to identify the appropriate tool)
+  - Internet search tool to fill gaps not covered by Vulners
+- Always start with Vulners CVE query → parse related documents → fetch bulletins → THEN search internet for missing technical details
 - Extract and summarize exploitation methodologies, code samples, and technical details
 - Prioritize authoritative sources (GitHub, ExploitDB, security research blogs, vendor advisories)
 - NEVER invent technical details - base analysis on actual source material
@@ -589,18 +441,19 @@ RESERVED CVE HANDLING:
 - If authoritative linked documents exist (e.g., vendor advisories), summarize only their stated technical content; do not infer beyond the documents.
 
 ANALYSIS METHODOLOGY:
-1. SOURCE IDENTIFICATION (Vulners CVE tool):
-   - Use MCPVulnersCVETool with the CVE ID to retrieve CVE data
-   - Extract related_documents (type=exploit, scanner, blog, vendor) with bulletin_id and titles
+1. SOURCE IDENTIFICATION (Vulners CVE query):
+   - Use CVE query tool with the CVE ID to retrieve CVE data
+   - Extract related documents from the response (look for fields containing document lists, bulletin IDs, security advisories, references)
+   - Search for document type indicators (exploit, scanner, blog, vendor, advisory, github, poc)
    - Note titles to prioritize documents likely containing technical details
 
-2. VULNERS DOCUMENT RETRIEVAL (Bulletin tool):
-   - For each prioritized related document, call MCPVulnersBulletinTool by bulletin_id
+2. VULNERS DOCUMENT RETRIEVAL (Bulletin query):
+   - For each prioritized related document, call the bulletin query tool with the document identifier
    - Parse and extract technical content (methods, parameters, preconditions, code snippets)
-   - Record publication dates to assess recency
+   - Record publication dates to assess recency (search for any date fields)
 
 3. INTERNET TECHNICAL SEARCH (ALWAYS perform to fill gaps):
-   - Use SerperSearchTool with targeted queries: "<CVE-ID> exploit technical details", "PoC", "write-up", product-specific attack terms
+   - Use internet search with targeted queries: "<CVE-ID> exploit technical details", "PoC", "write-up", product-specific attack terms
    - Retrieve missing details not present in Vulners (constraints, full exploitation steps, mitigation bypass techniques)
    - Prioritize authoritative and recent sources; cross-validate against Vulners content
 
@@ -647,7 +500,7 @@ technical_exploit_researcher = Agent(
     backstory=TECHNICAL_EXPLOIT_ANALYST_PROMPT,
     verbose=DEBUG_ENABLED,
     allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[MCPVulnersCVETool(), MCPVulnersBulletinTool(), SerperSearchTool()],
+    tools=MCP_TOOLS + WEB_SEARCH_TOOLS,  # MCP-discovered tools + web search
     llm=technical_exploit_researcher_llm,
     cache=True
 )
@@ -715,7 +568,7 @@ internet_researcher = Agent(
     backstory=INTERNET_RESEARCHER_PROMPT,
     verbose=DEBUG_ENABLED,
     allow_delegation=True,  # Enable delegation for collaborative research
-    tools=[SerperSearchTool()],
+    tools=WEB_SEARCH_TOOLS,  # Web search tools
     llm=internet_researcher_llm,
     cache=True
 )
@@ -732,13 +585,13 @@ risk_analyst_llm = create_llm_with_config(risk_analyst_llm_config)
 
 # Risk Analyst prompt near the agent declaration
 RISK_ANALYST_PROMPT = """\
-You are a Vulnerability Risk Scoring Analyst. Generate quantitative risk scores based on Vulners MCP data using the evidence-based scoring algorithm.
+You are a Vulnerability Risk Scoring Analyst. Generate quantitative risk scores based on Vulners data using the evidence-based scoring algorithm.
 
 ROLE: Analyze structured CVE data from previous research tasks and generate precise risk scores with uncertainty metrics.
 
 CRITICAL RULES:
 - Use ONLY data from previous research outputs - NO tool calls
-- Apply the scoring algorithm strictly to Vulners MCP data and to the aggregated RISK_INPUTS objects provided by previous tasks
+- Apply the scoring algorithm strictly to Vulners data and to the aggregated RISK_INPUTS objects provided by previous tasks
 - Return exactly one JSON object with value and uncertainty scores
 - NEVER invent or assume missing data points
 - Base scores on documented evidence only
@@ -748,14 +601,14 @@ CRITICAL RULES:
 SCORING ALGORITHM:
 
 ## Input Data Extraction:
-Extract from previous research outputs:
-- core_info: CVE ID, published date, description
-- cvss_metrics: CVSS scores and vectors
-- epss_score: Latest EPSS score and percentile
-- exploitation_status: wild_exploited, shadowserver_items
-- affected_products: Vulnerable software/systems
-- related_documents: Connected intelligence by type WITH PUBLICATION DATES
-- cwe_classifications: Weakness categories
+Extract from previous research outputs (search flexibly for these concepts):
+- Core CVE information: CVE ID, published/disclosure date, description (any fields with "id", "cve", "published", "date", "description")
+- Risk scoring metrics: CVSS scores and vectors (any fields with "cvss", "score", "vector", "severity", "base_score")
+- Exploit prediction: Latest EPSS/probability scores and percentiles (any fields with "epss", "probability", "percentile", "score")
+- Exploitation evidence: Active exploitation indicators, monitoring data (any fields with "exploit", "wild", "active", "shadowserver", "kev", "cisa", "honeypot")
+- Affected products: Vulnerable software/systems (any fields with "affected", "product", "vendor", "software", "system")
+- Related documents: Connected intelligence by type WITH PUBLICATION DATES (any fields with "document", "bulletin", "advisory", "reference", "published", "date")
+- Weakness classifications: CWE or other weakness categories (any fields with "cwe", "weakness", "vulnerability_type")
 - Current date for recency calculations
 
 ## Evidence Factor (E) Calculation with Recency Weighting and CVE Relationship Analysis:
@@ -998,8 +851,8 @@ vulnerability_research_task = Task(
 
 CRITICAL WORKFLOW:
 1. Check prompt for CVE/bulletin IDs FIRST
-2. If IDs present: Use Vulners CVE/Bulletin tools directly
-3. If NO IDs: Use internet search to discover identifiers, then research with Vulners
+2. If IDs present: Use Vulners database tools directly (examine available tool descriptions to identify CVE and bulletin query tools)
+3. If NO IDs: Use internet search to discover identifiers, then research with Vulners tools
 4. Investigate a manageable subset of related CVEs when useful; do not assume they form a chain unless explicitly stated by sources. ALWAYS enumerate related CVEs discovered (up to 6) with short linkage reasons.
 5. Extract and research HIGH-VALUE bulletins (exploit docs, CISA alerts, vendor advisories)
 6. Provide complete technical profiles for analysis
@@ -1007,8 +860,8 @@ CRITICAL WORKFLOW:
 RESERVED CVE WORKFLOW (MANDATORY):
 - If CVE is RESERVED:
   - Explicitly report RESERVED status
-  - Parse related_documents; for any vendor advisories/bulletins present, fetch them via MCPVulnersBulletinTool and summarize only their contents
-  - Do NOT perform internet searches unless authoritative documents are linked in related_documents and need cross-checking
+  - Parse returned data for related documents; for any vendor advisories/bulletins present, fetch them using bulletin query tool and summarize only their contents
+  - Do NOT perform internet searches unless authoritative documents are linked in the data and need cross-checking
   - If no linked documents, end with RESERVED status and no further details
 
 CVE RELATIONSHIP ANALYSIS (CONDITIONAL):
@@ -1024,9 +877,9 @@ TOOL USAGE RULES:
 - NEVER use hardcoded years - use relative terms only
 - NEVER conflate similar CVE IDs
 - RESERVED CVE RULE: If the CVE is RESERVED, explicitly report that status and refrain from technical details unless present in sources
-- Research related documents and CVE relationships only when evidenced in Vulners MCP data; avoid assumptions
+- Research related documents and CVE relationships only when evidenced in Vulners data; avoid assumptions
 
-TOOL SEQUENCE: Vulners tools FIRST when identifiers present, internet search FIRST when no identifiers.
+TOOL SEQUENCE: Vulners database tools FIRST when identifiers present, internet search FIRST when no identifiers.
 
 OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt (see RESEARCHER_RISK_OUTPUT_GUIDE).
@@ -1036,29 +889,29 @@ expected_output='Complete vulnerability intelligence including: CVE data with me
 )
 
 exploit_analysis_task = Task(
-    description="""Analyze exploitation data from SHARED Vulners MCP data collected by the Senior Vulnerability Researcher. NO additional tool calls required.
+    description="""Analyze exploitation data from SHARED Vulners data collected by the Senior Vulnerability Researcher. NO additional tool calls required.
 
-DATA SOURCE: Use ONLY the Vulners MCP tool outputs from the vulnerability research task. All necessary data has been collected.
+DATA SOURCE: Use ONLY the Vulners tool outputs from the vulnerability research task. All necessary data has been collected.
 
 ANALYSIS FOCUS:
-1. EXPLOITATION STATUS: Extract WILD_EXPLOITED status, sources, and confidence levels from shared CVE data
-2. EPSS EVALUATION: Analyze scores and percentiles from shared epss_score data (High: >0.7, Medium: 0.4-0.7, Low: <0.4)
-3. EXPLOIT DOCUMENTS: Filter TYPE=exploit entries from shared related_documents, assess credibility and technical depth
+1. EXPLOITATION STATUS: Extract exploitation indicators, sources, and confidence levels from shared CVE data (search for fields indicating active exploitation)
+2. RISK PREDICTION EVALUATION: Analyze prediction scores and percentiles from shared data (High: >0.7, Medium: 0.4-0.7, Low: <0.4) - look for EPSS or similar scoring
+3. EXPLOIT DOCUMENTS: Filter exploit-related entries from shared document listings, assess credibility and technical depth
 4. TIMELINE CORRELATION: Map exploit availability against CVE disclosure dates using shared timestamps
 5. TECHNICAL ASSESSMENT: Categorize exploit types (PoC, weaponized, scanner) and complexity from shared document metadata
-6. SHADOWSERVER EXPLOITATION TIMELINE: Analyze ShadowServer items for earliest exploitation evidence
+6. MONITORING TELEMETRY ANALYSIS: Analyze monitoring/telemetry data for earliest exploitation evidence (search for ShadowServer, honeypot, sensor data)
 7. CVE RELATIONSHIP ANALYSIS: Analyze related CVE relationships, including co-exploitation/combined use and, when explicitly evidenced, stepwise exploitation chains, from shared data. ALWAYS enumerate related CVEs when present (up to 6) with 3-8 word linkage reasons.
 
 RESERVED CVE GATING (MANDATORY):
 - If the shared CVE is RESERVED and the researcher provided no linked authoritative documents (vendor advisories/bulletins), immediately state RESERVED status and conclude; do not proceed with exploitation analysis.
 - If authoritative documents are linked and summarized by the researcher, limit analysis strictly to what those documents state; avoid inference.
 
-SHADOWSERVER ANALYSIS REQUIREMENTS:
-- Extract and summarize ShadowServer items from Vulners MCP exploitation_status data
-- Focus on exploitation timeline and earliest occurrences observed by ShadowServer
+MONITORING TELEMETRY ANALYSIS REQUIREMENTS:
+- Extract and summarize monitoring/telemetry items from shared Vulners data (look for ShadowServer, honeypot, sensor, telemetry fields)
+- Focus on exploitation timeline and earliest occurrences observed
 - Document the first detection timestamps and geographic distribution
-- Correlate ShadowServer data with vulnerability disclosure dates
-- Identify exploitation patterns and attack signatures from ShadowServer telemetry
+- Correlate telemetry data with vulnerability disclosure dates
+- Identify exploitation patterns and attack signatures from telemetry
 - Cross-reference with other sources - don't dismiss earlier exploitation evidence from different sources
 - Provide timeline analysis showing progression from disclosure to active exploitation
 
@@ -1070,13 +923,13 @@ CVE RELATIONSHIP ANALYSIS (CONDITIONAL):
 - Assess exploitation feasibility impact only when relationship evidence exists (co-exploitation or chain).
 
 EFFICIENCY RULE: Work exclusively with previously collected intelligence - no additional Vulners queries needed if this ID has already been researched.
-TOOL USAGE: Use Vulners MCP tools FIRST for referenced documents if IDs are present in the context, then internet search for additional technical details.
+TOOL USAGE: Use Vulners database tools FIRST for referenced documents if IDs are present in the context, then internet search for additional technical details.
 
 OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt.
 
-DELIVERABLES: Exploitation status, EPSS assessment, exploit availability analysis with recency context, concise related CVE enumeration with linkage reasons (up to 6), and (when explicitly evidenced) CVE chain relationships, plus risk assessment based on shared data.""",
-    expected_output='Exploit intelligence summary with exploitation status, EPSS evaluation, exploit documents analysis, ShadowServer exploitation timeline with earliest occurrences, conditional CVE chain analysis only when explicitly evidenced, and risk assessment based on shared Vulners MCP data. The last line must be a single-line RISK_INPUTS JSON object.',
+DELIVERABLES: Exploitation status, risk prediction assessment, exploit availability analysis with recency context, concise related CVE enumeration with linkage reasons (up to 6), and (when explicitly evidenced) CVE chain relationships, plus risk assessment based on shared data.""",
+    expected_output='Exploit intelligence summary with exploitation status, risk prediction evaluation, exploit documents analysis, monitoring/telemetry timeline with earliest occurrences, conditional CVE chain analysis only when explicitly evidenced, and risk assessment based on shared Vulners data. The last line must be a single-line RISK_INPUTS JSON object.',
     agent=exploit_researcher
 )
 
@@ -1114,24 +967,24 @@ OUTPUT PROTOCOL:
 )
 
 technical_exploitation_task = Task(
-    description="""Retrieve and analyze detailed technical exploitation information for vulnerabilities with ample exploitation evidence using ALL available tools (Vulners CVE, Vulners Bulletin, and Internet Search).
+    description="""Retrieve and analyze detailed technical exploitation information for vulnerabilities with ample exploitation evidence using ALL available tools (Vulners CVE query, Vulners bulletin query, and Internet Search).
 
 ACTIVATION CRITERIA: Only execute when vulnerability shows strong exploitation evidence:
-- wild_exploited=true status from Vulners MCP data
+- Active exploitation indicators from Vulners data
 - Multiple exploit documents available
-- CISA KEV presence indicating active exploitation
+- CISA KEV or similar catalog presence indicating active exploitation
 - Significant technical research needed beyond basic status
 
 TECHNICAL ANALYSIS OBJECTIVES:
-1. VULNERS REFERENCE EXTRACTION (MANDATORY): Extract exploitation document references from Vulners MCP data using CVE tool
-   - Related documents with type=exploit
-   - Bulletin IDs from related_documents section
+1. VULNERS REFERENCE EXTRACTION (MANDATORY): Extract exploitation document references from Vulners data using CVE query tool
+   - Related documents with exploit-related types (search for document type indicators)
+   - Bulletin/advisory IDs from document listings
    - Technical references in CVE descriptions
    - Security advisory references
 
-2. DOCUMENT RETRIEVAL (MANDATORY): Use Vulners MCP tools to retrieve referenced documents by ID
-   - Extract exact bulletin IDs from CVE search results
-   - Use MCPVulnersBulletinTool to get detailed technical information
+2. DOCUMENT RETRIEVAL (MANDATORY): Use Vulners bulletin query tool to retrieve referenced documents by ID
+   - Extract exact bulletin/document IDs from CVE query results
+   - Use bulletin query tool to get detailed technical information
    - Parse technical details, code samples, and methodologies from retrieved documents
 
 3. INTERNET TECHNICAL SEARCH (MANDATORY): Search for additional detailed exploitation information not present in Vulners
@@ -1162,8 +1015,8 @@ DELIVERABLES: Comprehensive technical exploitation summary including:
 - Real-world application scenarios and impact analysis
 - Technical mitigation analysis and bypass techniques
 
-EFFICIENCY RULE: Use Vulners tools FIRST when identifiers are present; ALWAYS follow with internet search to fill missing technical details.
-TOOL USAGE: Explicitly call MCPVulnersCVETool → parse related_documents and titles → MCPVulnersBulletinTool by bulletin_id → SerperSearchTool for gaps.
+EFFICIENCY RULE: Use Vulners database tools FIRST when identifiers are present; ALWAYS follow with internet search to fill missing technical details.
+TOOL USAGE: CVE query tool → parse document listings and titles → bulletin query tool by document identifier → internet search for gaps.
 
 OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt.
@@ -1174,19 +1027,19 @@ OUTPUT FORMAT: Structured technical summary with clear sections for methodology,
 )
 
 risk_scoring_task = Task(
-    description="""Generate quantitative risk scores using SHARED Vulners MCP data collected by the Senior Vulnerability Researcher and aggregated RISK_INPUTS lines from all prior tasks. NO additional tool calls required.
+    description="""Generate quantitative risk scores using SHARED Vulners data collected by the Senior Vulnerability Researcher and aggregated RISK_INPUTS lines from all prior tasks. NO additional tool calls required.
 
-DATA SOURCE: Use ONLY the Vulners MCP tool outputs from the vulnerability research task and the RISK_INPUTS single-line JSON contributions from all prior tasks. All necessary data has been collected.
+DATA SOURCE: Use ONLY the Vulners tool outputs from the vulnerability research task and the RISK_INPUTS single-line JSON contributions from all prior tasks. All necessary data has been collected.
 
 RISK SCORING OBJECTIVES:
-1. DATA EXTRACTION: Extract key metrics from SHARED research outputs:
-   - Core CVE information (ID, published date, description) from vulnerability_researcher's CVE tool outputs
-   - CVSS metrics with vectors from shared cvss_metrics sections
-   - EPSS scores and percentiles from shared epss_score sections
-   - Exploitation status from shared exploitation_status (wild_exploited, shadowserver_items)
-   - Affected products from shared affected_products sections
-   - Related documents by type and metadata from shared tool outputs WITH PUBLICATION DATES
-   - CWE classifications and attack patterns from shared data
+1. DATA EXTRACTION: Extract key metrics from SHARED research outputs (search flexibly for these data points):
+   - Core CVE information: ID, published date, description (any fields with "id", "cve", "published", "date", "description")
+   - Risk scoring metrics: CVSS scores and vectors (any fields with "cvss", "score", "vector", "severity", "base_score")
+   - Exploit prediction: EPSS/probability scores and percentiles (any fields with "epss", "probability", "percentile", "score")
+   - Exploitation evidence: Active exploitation indicators, monitoring data (any fields with "exploit", "wild", "active", "shadowserver", "kev", "cisa", "honeypot", "telemetry")
+   - Affected products/systems (any fields with "affected", "product", "vendor", "software", "system")
+   - Related documents by type and metadata WITH PUBLICATION DATES (any fields with "document", "bulletin", "advisory", "reference", "published", "date")
+   - Weakness classifications: CWE and attack patterns (any fields with "cwe", "weakness", "vulnerability_type", "capec", "attack_pattern")
    - Current date for recency calculations
 
 2. RECENCY EVALUATION: Assess information freshness and current status:
@@ -1197,27 +1050,27 @@ RISK SCORING OBJECTIVES:
    - Determine current patch availability status for risk adjustment
 
 3. EVIDENCE ANALYSIS: Assess exploitation evidence strength from shared data with recency weighting:
-   - Wild exploitation confirmation and sources from shared exploitation_status
-   - CISA KEV presence in shared related_documents
-   - Exploit document availability (GitHub, ExploitDB, Packet Storm) from shared related_documents
-   - Scanner coverage (Nessus, OpenVAS, Nuclei) with view counts from shared data
-   - Vendor advisories and emergency patches from shared related_documents
+   - Active exploitation confirmation and sources (search for exploitation indicator fields)
+   - Known Exploited Vulnerabilities catalog presence (search for KEV, CISA, catalog fields)
+   - Exploit document availability from document listings (search for GitHub, ExploitDB, PoC, exploit-type documents)
+   - Scanner coverage with view counts (search for Nessus, OpenVAS, Nuclei, scanner documents)
+   - Vendor advisories and emergency patches (search for vendor, advisory, patch, solution fields)
    - Security research coverage and authority from shared intelligence
    - Apply recency weighting to all evidence types
 
-3. POPULARITY ASSESSMENT: Evaluate affected system popularity from shared affected_products:
+3. POPULARITY ASSESSMENT: Evaluate affected system popularity from shared product data:
    - Internet-critical infrastructure (Exchange, AD, Linux kernel, OpenSSL): 1.0
    - Enterprise backbone (VMware, cloud platforms, databases): 0.8
    - Business applications (CMS, frameworks, databases): 0.6
    - Specialized enterprise software: 0.3
    - Obscure/niche tools: 0.1
 
-4. TECHNICAL EXPLOITABILITY: Analyze from shared CVSS vectors and CWE:
-   - Network accessibility (AV:N vs AV:L) from shared cvss_metrics
-   - Attack complexity (AC:L vs AC:H) from shared cvss_metrics
-   - Privileges required (PR:N vs PR:L/H) from shared cvss_metrics
-   - User interaction requirements (UI:N vs UI:R) from shared cvss_metrics
-   - CWE boost for high-impact categories from shared cwe_classifications
+4. TECHNICAL EXPLOITABILITY: Analyze from shared scoring metrics and weakness data:
+   - Network accessibility (search for AV:N vs AV:L or similar indicators in CVSS vectors)
+   - Attack complexity (search for AC:L vs AC:H or similar indicators)
+   - Privileges required (search for PR:N vs PR:L/H or similar indicators)
+   - User interaction requirements (search for UI:N vs UI:R or similar indicators)
+   - Weakness boost for high-impact categories (search for critical CWE types or attack pattern severity)
 
 5. SCORE COMPUTATION: Apply evidence-based algorithm to shared data:
    - Aggregate exploitation evidence factor (E)
@@ -1243,11 +1096,11 @@ CRITICAL REQUIREMENTS:
 analysis_task = Task(
     description="""Create a comprehensive vulnerability analysis report using ONLY SHARED data from previous research tasks. NO additional tool calls required.
 
-DATA SOURCE: Use ONLY the outputs from: vulnerability_researcher (Vulners MCP data), exploit_researcher (exploitation analysis), technical_exploit_researcher (technical exploitation details), internet_researcher (threat intelligence), and risk_analyst (quantitative scoring).
+DATA SOURCE: Use ONLY the outputs from: vulnerability_researcher (Vulners data), exploit_researcher (exploitation analysis), technical_exploit_researcher (technical exploitation details), internet_researcher (threat intelligence), and risk_analyst (quantitative scoring).
 
 SYNTHESIS REQUIREMENTS:
-1. Integrate exact technical metrics (CVSS, CWE, EPSS with precise values) from shared Vulners data
-2. Compile exploitation evidence from shared exploit analysis including ShadowServer exploitation timeline and earliest occurrences
+1. Integrate exact technical metrics from shared Vulners data (search for CVSS scores, CWE classifications, EPSS predictions with precise values - be flexible about field names)
+2. Compile exploitation evidence from shared exploit analysis including monitoring/telemetry timeline and earliest occurrences
 3. Include CVE relationship analysis from shared intelligence:
    - Document related CVE relationships and connections when sources link them (co-exploitation/combined use) or explicitly describe chains
    - Explain how CVEs are used together in campaigns or toolkits when sources state it; only explain stepwise chains when documented
@@ -1269,10 +1122,10 @@ RECENCY EVALUATION:
 - Prioritize recent patches, advisories, and security updates in recommendations
 
 REPORT FORMAT: Flowing narrative paragraphs (NOT bullet points), 6-8 paragraphs total.
-- Opening: Vulnerability overview with key metrics and exploitation status from shared data
+- Opening: Vulnerability overview with key metrics and exploitation status from shared data (flexibly extract CVSS, severity, and exploitation indicators)
 - Risk Assessment: Prominently feature the computed risk score (value and uncertainty) with contextual explanation of the scoring methodology and factors
 - Current Status Evaluation: Explicit assessment of patch availability and information recency
-- Exploitation Analysis: EPSS assessment, ShadowServer exploitation timeline with earliest occurrences, exploit availability, and technical details from shared analysis
+- Exploitation Analysis: Risk prediction assessment, monitoring/telemetry timeline with earliest occurrences, exploit availability, and technical details from shared analysis
 - Technical Exploitation Details: When available, detailed exploitation methodologies, code examples, and technical analysis from the Technical Exploitation Analyst
 - Threat Intelligence & TTPs: Detailed analysis of threat actor attribution, attack campaigns, adversary TTPs with MITRE ATT&CK mappings, exploitation methodologies, and observed attack patterns from shared research
 - CVE Relationship Analysis: Detailed analysis of related CVE relationships, including co-exploitation/combined use, and stepwise exploitation chains ONLY when explicitly evidenced in shared intelligence; otherwise, focus on individual CVEs without assuming chains
@@ -1289,7 +1142,7 @@ RISK SCORE INTEGRATION:
 EFFICIENCY RULE: Work exclusively with previously collected intelligence - no additional queries needed.
 
 QUALITY: Every claim traceable to shared task outputs, no speculation, focus on actionable intelligence, risk score prominently featured.""",
-    expected_output='Comprehensive vulnerability analysis report in flowing narrative paragraphs, integrating all shared research findings including detailed CVE relationship analysis (co-exploitation/combined use and explicitly evidenced chains), ShadowServer exploitation timeline with earliest occurrences, comprehensive TTP analysis with MITRE ATT&CK mappings, and threat intelligence, with evidence-based assessments, prominently featuring the quantitative risk score, and providing actionable recommendations prioritized by risk level.',
+    expected_output='Comprehensive vulnerability analysis report in flowing narrative paragraphs, integrating all shared research findings including detailed CVE relationship analysis (co-exploitation/combined use and explicitly evidenced chains), monitoring/telemetry timeline with earliest occurrences, comprehensive TTP analysis with MITRE ATT&CK mappings, and threat intelligence, with evidence-based assessments, prominently featuring the quantitative risk score, and providing actionable recommendations prioritized by risk level.',
     agent=analyst
 )
 
@@ -1300,7 +1153,24 @@ QUALITY: Every claim traceable to shared task outputs, no speculation, focus on 
 # Create the base crew with explicit agents
 base_crew = Crew(
     name="VM-Agent",
-    tasks=[research_planning_task, vulnerability_research_task, exploit_analysis_task, threat_intelligence_task, technical_exploitation_task, risk_scoring_task, analysis_task],
+    agents=[
+        research_planner,
+        vulnerability_researcher,
+        exploit_researcher,
+        internet_researcher,
+        technical_exploit_researcher,
+        risk_analyst,
+        analyst
+    ],
+    tasks=[
+        research_planning_task,
+        vulnerability_research_task,
+        exploit_analysis_task,
+        threat_intelligence_task,
+        technical_exploitation_task,
+        risk_scoring_task,
+        analysis_task
+    ],
     process=Process.sequential,
     verbose=DEBUG_ENABLED
 )

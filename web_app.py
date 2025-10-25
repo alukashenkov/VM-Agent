@@ -21,10 +21,32 @@ except ImportError:
     # Fallback if python-dotenv is not available
     pass
 
-# Import the execution function and logging setup from agent module
-from agent import run_crew_execution_with_logging, setup_logging
+# DON'T import agent functions at module level - this loads all CrewAI dependencies
+# Instead, import them inside the route handler when actually needed
+# This makes the web server start much faster
 
 app = Flask(__name__)
+
+# Lazy import helper for agent functions
+_agent_module = None
+
+def _get_agent_functions():
+    """Lazy-load agent module only when needed."""
+    global _agent_module
+    if _agent_module is None:
+        print("  📦 Loading CrewAI agents (first request only)...")
+        import time
+        start = time.time()
+        
+        # Import agent module (tiktoken issue is fixed in agents_definitions.py)
+        from agent import run_crew_execution_with_logging, setup_logging
+        
+        print(f"  ✓ Agents loaded in {time.time() - start:.2f}s")
+        _agent_module = {
+            'run_crew_execution_with_logging': run_crew_execution_with_logging,
+            'setup_logging': setup_logging
+        }
+    return _agent_module
 
 # Real-time update function removed to prevent duplicate page opening
 
@@ -115,6 +137,11 @@ def analyze():
         session_id = data.get('session_id')
         
         print(f"🔍 Starting analysis for prompt: {prompt}")
+
+        # Lazy-load agent functions only when needed (first request)
+        agent_funcs = _get_agent_functions()
+        setup_logging = agent_funcs['setup_logging']
+        run_crew_execution_with_logging = agent_funcs['run_crew_execution_with_logging']
 
         # Setup logging for the analysis
         console_logger, file_logger, log_filename = setup_logging()

@@ -1,7 +1,7 @@
 crewai
+crewai-tools[mcp]
 litellm
 python-dotenv
-requests
 flask
 markdown
 Pygments
