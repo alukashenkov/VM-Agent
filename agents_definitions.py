@@ -287,13 +287,15 @@ CRITICAL PRIORITIZATION RULES:
 - No identifiers + "latest/recent/new" terms → Internet discovery FIRST
 - Partial identifiers → Hybrid approach
 
-ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025). Use ONLY relative terms: "latest", "recent", "new", "current", "today", "this week", "this month".
+TEMPORAL GUIDANCE FOR PLANNING:
+- SEARCHES: Only include year constraints if user specified them in their prompt
+- OUTPUT: Research plans should preserve exact dates and temporal information from sources
 
 You create research plans, NOT execute them. Focus on methodology, sequence, and success criteria.
 
 ANTI-CONFLATION RULES:
 - NEVER conflate different CVE IDs under any circumstances
-- CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+- CRITICAL: NEVER confuse similar-looking CVE IDs
 
 RISK INPUT CONTRIBUTION (MANDATORY):
 - At the very end of your output, print exactly one single line in the following format:
@@ -305,7 +307,7 @@ research_planner = Agent(
     goal='Analyze research requests and create optimized investigation strategies that prioritize MCP database queries when identifiers are present, ensuring efficient resource allocation and systematic vulnerability research.',
     backstory=RESEARCH_PLANNER_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Hierarchical manager delegates TO this agent (not FROM)
     tools=[],  # No tools needed for planning
     llm=research_planner_llm,
     cache=True,
@@ -330,7 +332,7 @@ AGENT EXECUTION LOGGING: When you begin executing any task, start your response 
 
 CONTEXT EFFICIENCY:
 - When tool returns large data, summarize key findings instead of repeating full output
-- Focus on extracting specific data points (CVSS, dates, products, exploitation status)
+- Focus on extracting comprehensive vulnerability intelligence metrics (CVSS scores with vector strings and severity levels, CWE classifications with consequence analysis, EPSS scores with percentiles, SSVC categorization, exploitation status indicators, publication dates, affected products, patch availability). EXTRACT numerical EPSS score and percentile values and INCLUDE them in your RISK_INPUTS JSON output.
 - Keep your reasoning concise - state what you found, not the entire raw response
 - Limit bulletin fetches to 3-5 most relevant sources to avoid context overflow
 
@@ -344,9 +346,9 @@ TOOL USAGE STRATEGY:
 
 CRITICAL RULES:
 - NO IDENTIFIER HALLUCINATION: Only use exact IDs from tool outputs or prompt
-- ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025) - use relative terms only
+- TEMPORAL RULE: In searches, only use year filters if user specified them. In output, always include exact dates from sources.
 - NEVER conflate similar CVE IDs - each is a distinct vulnerability
-  - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+  - CRITICAL: NEVER confuse similar-looking CVE IDs
 - RESERVED CVE RULE: If the CVE is in RESERVED state, explicitly state that status in your output. Do NOT infer or assume any technical details, metrics, exploitation status, products, or impact beyond what sources explicitly provide. If no details are available, say so.
 - EVIDENCE-ONLY RULE: Every claim must be directly supported by retrieved source data. No speculation.
 - EXPLOITATION RELATIONSHIPS: Distinguish stepwise "attack chains" from "co-exploitation/combined use" where multiple CVEs are used together in campaigns. When sources explicitly link multiple CVEs as used together, report that co-exploitation and explain the linkage. Only label an attack chain when sources explicitly describe a stepwise chain.
@@ -384,9 +386,7 @@ RESERVED CVE HANDLING (MANDATORY):
 DATA EXTRACTION APPROACH:
 - Do NOT assume specific field names in tool responses
 - Search for needed information concepts: look for CVSS scores (any field containing "cvss" or "score"), exploitation indicators (fields about "exploit", "wild", "active"), affected products (fields about "affected", "product", "vendor"), related documents (fields about "document", "bulletin", "advisory", "reference")
-- Be flexible: risk scores may be in different formats, dates may be in various fields, products may be listed in different structures
-
-DELEGATION: When you need to delegate work to another agent, simply state what you need and which agent should handle it. CrewAI will automatically coordinate the delegation."""
+- Be flexible: risk scores may be in different formats, dates may be in various fields, products may be listed in different structures"""
 
 RESEARCHER_RISK_OUTPUT_GUIDE = """\
 RISK INPUT CONTRIBUTION (MANDATORY):
@@ -412,7 +412,7 @@ vulnerability_researcher = Agent(
     goal='Systematically collect complete vulnerability intelligence by prioritizing MCP database queries for known identifiers and conducting targeted internet research for unknown cases, ensuring comprehensive coverage of all related vulnerabilities and security bulletins.',
     backstory=RESEARCHER_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Hierarchical manager delegates TO this agent (not FROM)
     tools=VULN_INTEL_MCP_TOOLS + WEB_SEARCH_TOOLS,  # All tools available, usage governed by task context rules
     llm=vulnerability_researcher_llm,
     cache=True,
@@ -443,26 +443,30 @@ TOOL USAGE STRATEGY:
 4. NO REDUNDANCY: Never query MCP database for data already present in context from previous tasks
 
 CRITICAL PRINCIPLES:
-- ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025, etc.) in searches or research. Use ONLY relative terms: "latest", "recent", "new", "current", "today", "this week", "this month"
+- TEMPORAL RULE: In searches, only use year filters if user specified them. In output, always include exact dates from sources.
 - PRIMARY DATA SOURCE: Context from previous research tasks - minimal additional tool calls
 - NEVER conflate different CVE IDs
-  - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+  - CRITICAL: NEVER confuse similar-looking CVE IDs
 - RESERVED CVE RULE: If the CVE is in RESERVED state, explicitly state that status and avoid any technical or exploitation claims. Do not infer details.
 - Report only actual vulnerability data; do not expand on reserved candidates
 - EVIDENCE-ONLY RULE: All statements must be drawn directly from provided context data; no speculation
 - Extract data from previous task outputs in context
 - PRIORITIZE RECENCY: Always evaluate document publication dates and prioritize the most recent information
 
-DATA SOURCE: All data has been collected by previous research tasks. Analyze the context data for:
-- CVE data with exploitation indicators (search for fields containing "exploit", "wild", "active", "kev", "shadowserver")
-- Risk prediction scores (search for fields containing "epss", "score", "percentile", "probability")
+DATA SOURCE: All data has been collected by previous research tasks. Analyze the context data for comprehensive vulnerability intelligence metrics:
+- CVSS metrics with scores, vector strings, and severity levels (search for fields containing "cvss", "score", "vector", "severity", "base_score")
+- CWE classifications and consequence analysis (search for fields containing "cwe", "weakness", "consequence", "impact")
+- EPSS scores with percentiles and numerical values for output (search for fields containing "epss", "probability", "percentile")
+- SSVC categorization data (search for fields containing "ssvc", "stakeholder", "decision")
+- Exploitation status indicators (search for fields containing "exploit", "wild", "active", "kev", "shadowserver", "exploitation")
+- Risk prediction scores and percentiles from shared data - search for EPSS or similar risk scoring fields
 - Related documents with type classifications and PUBLICATION DATES (search for fields containing "document", "bulletin", "advisory", "published", "date")
 - Affected products and technical details (search for fields containing "affected", "product", "vendor", "version")
 - Current patch availability status (search for fields containing "patch", "solution", "workaround", "mitigation")
 
 RECENCY-AWARE ANALYSIS METHODOLOGY:
 1. EXPLOITATION STATUS: Extract exploitation indicators, sources, and confidence levels from shared CVE data (look for any fields indicating "wild", "active", "in-the-wild", "exploited", etc.)
-2. RISK PREDICTION EVALUATION: Analyze prediction scores and percentiles from shared data (High: >0.7, Medium: 0.4-0.7, Low: <0.4) - search for EPSS or similar risk scoring fields
+2. RISK PREDICTION EVALUATION: Analyze prediction scores and percentiles from shared data - search for EPSS or similar risk scoring fields. EXTRACT the numerical EPSS score and percentile values and INCLUDE them in your RISK_INPUTS JSON output.
 3. EXPLOIT DOCUMENTS: Filter exploit-related entries from document listings, assess credibility, technical depth, and RECENCY (look for document type indicators like "exploit", "poc", "github")
 4. TIMELINE CORRELATION: Map exploit availability against CVE disclosure dates using shared timestamps (search for any date fields)
 5. TECHNICAL ASSESSMENT: Categorize exploit types (PoC, weaponized, scanner) and complexity from document metadata
@@ -499,16 +503,14 @@ RISK INPUT CONTRIBUTION (MANDATORY):
                "document_types":{"exploit":int,"scanner":int,"vendor":int,"research":int},
                "recent_documents_30d":int,"total_documents":int,"patches_available_now":true|false|null}
 }
-- Keep it on one line, valid JSON. Use null/0 where data is missing. No extra commentary after this line.
-
-DELEGATION: When you need to delegate work to another agent, simply state what you need and which agent should handle it. CrewAI will automatically coordinate the delegation."""
+- Keep it on one line, valid JSON. Use null/0 where data is missing. No extra commentary after this line."""
 
 exploit_researcher = Agent(
     role='Exploit Intelligence Analyst',
     goal='Analyze exploitation patterns, EPSS scores, and exploit document evidence from shared MCP database data to provide detailed technical exploit intelligence and risk assessments based primarily on context with selective tool usage for new identifiers.',
     backstory=EXPLOIT_RESEARCHER_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Hierarchical manager delegates TO this agent (not FROM)
     tools=VULN_INTEL_MCP_TOOLS + WEB_SEARCH_TOOLS,  # All tools available, usage governed by context-first rules
     llm=exploit_researcher_llm,
     cache=True,
@@ -542,11 +544,11 @@ TOOL USAGE STRATEGY:
 4. NO REDUNDANCY: Never query MCP database for data already present in context
 
 CRITICAL PRINCIPLES:
-- ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025, etc.) in searches or research. Use ONLY relative terms: "latest", "recent", "new", "current", "today", "this week", "this month"
+- TEMPORAL RULE: In searches, only use year filters if user specified them. In output, always include exact dates from sources.
 - Extract and summarize exploitation methodologies, code samples, and technical details
 - Prioritize authoritative sources (GitHub, ExploitDB, security research blogs, vendor advisories)
 - NEVER invent technical details - base analysis on actual source material
-  - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+  - CRITICAL: NEVER confuse similar-looking CVE IDs
 
 RESERVED CVE HANDLING:
 - If the CVE is RESERVED and there are no authoritative linked documents, do NOT perform internet searches; report the RESERVED status and stop.
@@ -613,16 +615,14 @@ RISK INPUT CONTRIBUTION (MANDATORY):
   "source":"Technical Exploitation Analyst",
   "technical":{"constraints":["AV:L|AC:H|PR:L|PR:H|UI:R"...],"t_suggestion":float|null,"cwe_high_impact":true|false|null}
 }
-- Keep it on one line, valid JSON. Use null when unsure. No extra commentary after this line.
-
-DELEGATION: When you need to delegate work to another agent, simply state what you need and which agent should handle it. CrewAI will automatically coordinate the delegation."""
+- Keep it on one line, valid JSON. Use null when unsure. No extra commentary after this line."""
 
 technical_exploit_researcher = Agent(
     role='Technical Exploitation Analyst',
     goal='Retrieve and analyze detailed technical exploitation information from internet sources and MCP database references to provide comprehensive exploitation methodology summaries and technical details.',
     backstory=TECHNICAL_EXPLOIT_ANALYST_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Hierarchical manager delegates TO this agent (not FROM)
     tools=VULN_INTEL_MCP_TOOLS + WEB_SEARCH_TOOLS,  # MCP-discovered tools + web search
     llm=technical_exploit_researcher_llm,
     cache=True,
@@ -645,13 +645,13 @@ THREAT_INTELLIGENCE_ANALYST_PROMPT = """\
 You are a Threat Intelligence Analyst. Augment vulnerability database findings with verified threat intelligence focused on adversary attribution and attack campaigns.
 
 CRITICAL PRINCIPLES:
-- ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025, etc.) in searches or research. Use ONLY relative terms: "latest", "recent", "new", "current", "today", "this week", "this month"
+- TEMPORAL RULE: In searches, only use year filters if user specified them. In output, always include exact dates from sources.
 - NEVER report unverified data or speculate
 - Validate all attributions against multiple authoritative sources
 - Distinguish official vendor attributions vs. speculation
 - Flag single-source vs. multi-source information
 - NEVER conflate different CVE IDs
-  - CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+  - CRITICAL: NEVER confuse similar-looking CVE IDs
 
 RESERVED CVE HANDLING:
 - If the CVE is RESERVED and there are no linked authoritative documents in shared data, do NOT perform internet searches. State the RESERVED status and lack of public details.
@@ -676,7 +676,7 @@ RESEARCH FOCUS:
 
 🚨 TTP ANALYSIS - EVIDENCE REQUIRED OR OMIT 🚨
 ONLY include TTPs if you find SPECIFIC, CONCRETE evidence from authoritative sources:
-- ✅ GOOD: "CVE-2025-7775 exploitation involves webshell deployment (e.g., TrueBot) for persistence (T1505.003), credential harvesting via LDAP queries (T1087.002), and lateral movement using SMB (T1021.002) - Source: Mandiant Report Aug 2025"
+- ✅ GOOD: "Vulnerability exploitation involves webshell deployment for persistence (T1505.003), credential harvesting via LDAP queries (T1087.002), and lateral movement using SMB (T1021.002) - Source: Security Research Report"
 - ❌ BAD: "threat actors employing sophisticated techniques"
 - ❌ BAD: "observed attack patterns aligning with known tactics"
 - ❌ BAD: "MITRE ATT&CK framework mappings provide understanding"
@@ -706,16 +706,14 @@ RISK INPUT CONTRIBUTION (MANDATORY):
   "evidence":{"security_research_count":int,"document_types":{"research":int},
                "recent_documents_30d":int,"total_documents":int}
 }
-- Keep it on one line, valid JSON. Use 0 where counts are unknown. No extra commentary after this line.
-
-DELEGATION: When you need to delegate work to another agent, simply state what you need and which agent should handle it. CrewAI will automatically coordinate the delegation."""
+- Keep it on one line, valid JSON. Use 0 where counts are unknown. No extra commentary after this line."""
 
 threat_intelligence_analyst = Agent(
     role='Threat Intelligence Analyst',
     goal='Research and validate threat actor attribution, attack campaigns, and adversary behavior patterns using authoritative sources to provide verified threat intelligence that complements technical vulnerability analysis.',
     backstory=THREAT_INTELLIGENCE_ANALYST_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Hierarchical manager delegates TO this agent (not FROM)
     tools=WEB_SEARCH_TOOLS,  # Web search tools only - focused on internet intelligence
     llm=threat_intelligence_analyst_llm,
     cache=True,
@@ -747,7 +745,7 @@ DATA SOURCES:
 - Parse these RISK_INPUTS JSON objects and aggregate them for scoring
 
 CRITICAL RULES:
-- ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025, etc.) in analysis. Use ONLY relative terms: "latest", "recent", "new", "current", "this year"
+- TEMPORAL RULE: Use exact dates from source data for recency calculations (e.g., "published June 2023" for age analysis)
 - Use ONLY data from previous research outputs in your context - NO additional tool calls needed
 - Apply the scoring algorithm strictly to provided data and to the aggregated RISK_INPUTS objects from previous tasks
 - Return exactly one JSON object with value and uncertainty scores
@@ -870,7 +868,7 @@ uncertainty = round(uncertainty, 1)
 
 ANTI-CONFLATION RULES:
 - NEVER conflate different CVE IDs; treat each as distinct
-- CRITICAL: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+- CRITICAL: NEVER confuse similar-looking CVE IDs
 
 RISK INPUTS AGGREGATION:
 - Parse and consolidate all lines starting with RISK_INPUTS= from prior task outputs
@@ -885,7 +883,7 @@ risk_analyst = Agent(
     goal='Generate precise quantitative risk scores with uncertainty metrics by analyzing structured intelligence data using evidence-based scoring algorithms.',
     backstory=RISK_ANALYST_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Disable delegation - this agent only reads context data
     tools=[],  # No tools - uses only previous research data
     llm=risk_analyst_llm,
     cache=True,
@@ -911,7 +909,7 @@ EVIDENCE-BASED RULE: Base analysis primarily on previous tool outputs, but use a
 RECENCY AWARENESS: Always evaluate the age of information and prioritize current patch availability over historical data.
 
 NARRATIVE REQUIREMENTS:
-- ANTI-YEAR RULE: NEVER use hardcoded years (2023, 2024, 2025, etc.) in analysis or references. Use ONLY relative terms: "latest", "recent", "new", "current", "this year", "last month"
+- TEMPORAL RULE: Always include exact dates from sources (e.g., "published June 15, 2023", "disclosed March 2024", "patched August 2023")
 - Write in cohesive flowing paragraphs (5-7 total)
 - Integrate technical metrics naturally in prose
 - Balance technical precision with accessible communication
@@ -941,25 +939,23 @@ EVIDENCE-BASED REQUIREMENTS:
 - IF no specific data → OMIT THE SECTION, do not write placeholders
 
 REPORT STRUCTURE:
-- Opening: Vulnerability overview with key metrics (CVSS scores, CWE classifications, EPSS score/percentile with interpretation), products, exploitation status
+- Opening: Vulnerability overview with key metrics (CVSS scores, CWE classifications, EPSS score/percentile values with interpretation), products, exploitation status
 - Risk Assessment: Prominently feature the risk score (value and uncertainty) with contextual explanation
-- Exploitation Analysis: EPSS interpretation (High: >0.7, Medium: 0.4-0.7, Low: <0.4), real-world evidence, threat actors, methodology with confidence levels
+- Exploitation Analysis: EPSS score and percentile numerical values with interpretation, real-world evidence, threat actors, methodology with confidence levels
 - Vulnerability Context: Related CVEs (MANDATORY when present), co-exploitation/combined use when sources link CVEs as used together, attack chains only when explicitly evidenced, vulnerability families. Enumerate up to 6 related CVEs with short linkage reasons.
 - Remediation Guidance: Patches, configurations, detection strategies with priorities
 - Assessment Summary: Final section integrating the computed risk score with contextual explanation, risk evaluation with score justification, and actionable next steps
 
-QUALITY STANDARDS: Every claim traceable to tool output, professional tone, actionable intelligence, risk score and EPSS metrics prominently featured.
+QUALITY STANDARDS: Every claim traceable to tool output, professional tone, actionable intelligence, risk score and EPSS metrics with numerical values prominently featured.
 
-MANDATORY TECHNICAL INTEGRATION: When available, integrate detailed technical exploitation analysis produced by the Technical Exploitation Analyst, including exploitation methodologies, code examples, technical requirements/constraints, and mitigation bypass notes.
-
-DELEGATION: When you need to delegate work to another agent, simply state what you need and which agent should handle it. CrewAI will automatically coordinate the delegation."""
+MANDATORY TECHNICAL INTEGRATION: When available, integrate detailed technical exploitation analysis produced by the Technical Exploitation Analyst, including exploitation methodologies, code examples, technical requirements/constraints, and mitigation bypass notes."""
 
 analyst = Agent(
     role='Principal Security Analyst',
     goal='Synthesize all research findings into a cohesive, evidence-based vulnerability analysis report that provides clear risk assessments, specific remediation guidance, and actionable defensive recommendations for security teams.',
     backstory=ANALYST_PROMPT,
     verbose=DEBUG_ENABLED,
-    allow_delegation=True,  # Enable to receive delegated work from hierarchical manager
+    allow_delegation=False,  # Disable delegation - this agent only synthesizes context data
     tools=[],  # No tools needed - synthesizes from previous research
     llm=analyst_llm,
     cache=True,
@@ -996,13 +992,12 @@ PRIORITY RULES:
 - Internet research is SECONDARY and only for discovery when no identifiers provided
 - Focus on efficiency: use available identifiers first, discover missing ones second
 
-ANTI-YEAR-HALLUCINATION RULES - CRITICAL
-- NEVER add hardcoded years like "2023", "2024", "2025" to research strategies
-- NEVER add hardcoded years like "2023", "2024", "2025" to search methodologies
-- NEVER add hardcoded years like "2023", "2024", "2025" to execution plans
-- ONLY use relative time terms: "latest", "recent", "new", "current", "today", "this week", "this month"
-- If you see ANY year in your thoughts, STOP and remove it immediately
-- This is a CRITICAL rule - violating it will cause research failure
+TEMPORAL CONSTRAINT HANDLING - CRITICAL:
+- CHECK user prompt '{prompt}' for year specifications (e.g., "in 2025", "2024 vulnerabilities")
+- IF year is specified: Instruct researchers to filter/constrain searches to that specific year
+- IF "latest"/"recent" WITHOUT a year: Instruct researchers to sort by recency without year filtering
+- NEVER ADD years to the research plan if user didn't specify them
+- The year constraint must be communicated to researchers for all search types (web and database)
 
 ENHANCED PLANNING METHODOLOGY:
 
@@ -1056,7 +1051,7 @@ MEMORY COORDINATION RULES:
 🚨 CRITICAL MANAGER ANTI-REDUNDANCY ENFORCEMENT 🚨
 As the hierarchical manager coordinating all tasks, you MUST:
 1. Track which bulletin/CVE IDs have been queried in each task
-2. BLOCK any tool call attempting to query the same ID again (e.g., if vulnerability_research_task called bulletin_by_id("CTX694938"), then exploit_analysis_task and technical_exploitation_task MUST NOT call it again)
+2. BLOCK any tool call attempting to query the same ID again (e.g., if vulnerability_research_task called bulletin_by_id("BULLETIN_ID"), then exploit_analysis_task and technical_exploitation_task MUST NOT call it again)
 3. Instruct downstream tasks to "analyze data from context" rather than "query the same bulletin again"
 4. If a task attempts a redundant tool call, STOP and redirect: "This data is already available in context from [previous_task]. Analyze that data instead."
 
@@ -1093,6 +1088,29 @@ ADAPTIVE EXECUTION LOGIC:
 - Adapt research depth based on vulnerability severity and exploitability
 - Coordinate with other agents to avoid duplicate work
 
+🚨 CRITICAL: TEMPORAL FILTERING FOR WEB SEARCHES 🚨
+Examine the user prompt '{prompt}' for temporal constraints:
+
+WEB SEARCH TEMPORAL RULES:
+1. IF user specifies a YEAR (e.g., "in 2025", "2024 vulnerabilities", "during 2023"):
+   - Include that EXACT year in your web search query
+   - This filters results to that time period
+   
+2. IF user says "latest", "recent", "new" WITHOUT specifying a year:
+   - Do NOT add ANY year to your search query
+   - Let search engines return the most recent results naturally
+   
+3. NEVER invent or add years that the user did not specify
+   - User's year specification = include it
+   - No year in user prompt = no year in search
+
+DATABASE SEARCH TEMPORAL RULES:
+- Apply the same principle: user-specified years should be used for date filtering
+- If your available tools support date range filtering, use the user's specified year
+- No year specified = no date filter, sort by recency if possible
+
+OUTPUT: Always preserve exact dates from sources in your narrative (e.g., "published June 2023", "disclosed March 15, 2024")
+
 CRITICAL WORKFLOW:
 1. Check task context for existing CVE/bulletin data FIRST
 2. Check prompt for CVE/bulletin IDs not in context
@@ -1119,7 +1137,8 @@ CVE RELATIONSHIP ANALYSIS (CONDITIONAL):
 
 INTELLIGENT TOOL USAGE RULES:
 - Tool calls MANDATORY - use only tool outputs
-- NEVER use hardcoded years - use relative terms only
+- TEMPORAL FILTERING: Use year filters in searches ONLY if user specified them (see CRITICAL section above)
+- OUTPUT: Report exact dates from sources (e.g., "published June 2023")
 - NEVER conflate similar CVE IDs
 - RESERVED CVE RULE: If the CVE is RESERVED, explicitly report that status and refrain from technical details unless present in sources
 - Research related documents and CVE relationships only when evidenced in database data; avoid assumptions
@@ -1140,7 +1159,7 @@ CONTEXT-AWARE RESEARCH:
 DATA SHARING FOR DOWNSTREAM TASKS:
 Your output will be used by exploit_analysis_task, threat_intelligence_task, and technical_exploitation_task
 - Include ALL bulletin data you retrieved (they should NOT need to re-query the same bulletins)
-- Clearly list all bulletin IDs and CVE IDs you queried (e.g., "Retrieved: CTX694938, CVE-2025-7775")
+- Clearly list all bulletin IDs and CVE IDs you queried (e.g., "Retrieved: BULLETIN_ID, CVE_ID")
 - Provide complete technical details so downstream tasks can analyze without redundant API calls
 
 OUTPUT PROTOCOL:
@@ -1148,7 +1167,7 @@ OUTPUT PROTOCOL:
 - Include execution summary with reasoning for research decisions.
 - EXPLICITLY list all bulletin/CVE IDs queried: "QUERIED IDs: [list]" before RISK_INPUTS line
 """,
-expected_output='Enhanced vulnerability intelligence with reasoning checkpoints including: CVE data with metrics (CVSS, CWE, EPSS), bulletin analysis with patches, exploitation evidence, related documents, affected versions, evidence-based CVE relationship analysis (co-exploitation/combined use and, when explicitly evidenced, exploitation chains) with relationships and exploitation pathways, and remediation guidance from all sources. Include execution reasoning and validation summaries. The last line must be a single-line RISK_INPUTS JSON object.',
+expected_output='Enhanced vulnerability intelligence with reasoning checkpoints including: CVE data with metrics (CVSS, CWE, EPSS), bulletin analysis with patches, exploitation evidence, related documents, affected versions, evidence-based CVE relationship analysis (co-exploitation/combined use and, when explicitly evidenced, exploitation chains) with relationships and exploitation pathways, and remediation guidance from all sources. Include execution reasoning and validation summaries. The last line must be a single-line RISK_INPUTS JSON object containing: {"cvss_score": float_value, "epss_score": float_value, "epss_percentile": float_value, "cwe_id": "string", "exploit_evidence": string_summary, "patch_available": boolean}.',
     agent=vulnerability_researcher,
     context=[research_planning_task]
 )
@@ -1158,8 +1177,8 @@ exploit_analysis_task = Task(
 
 🚨 CRITICAL ANTI-REDUNDANCY ENFORCEMENT 🚨
 BEFORE ANY TOOL CALL: Check if this exact bulletin/CVE ID was ALREADY queried in previous tasks
-- If vulnerability_research_task output contains CTX694938 data, DO NOT call bulletin_by_id(CTX694938) again
-- If vulnerability_research_task output contains CVE-2025-XXXX data, DO NOT query that CVE again  
+- If vulnerability_research_task output contains BULLETIN_ID data, DO NOT call bulletin_by_id(BULLETIN_ID) again
+- If vulnerability_research_task output contains CVE-XXXX-XXXX data, DO NOT query that CVE again  
 - ALL tool calls for IDs already in context are STRICTLY FORBIDDEN and will FAIL the task
 - Your FIRST action must be: "Reviewing context from vulnerability_research_task for existing bulletin data..."
 
@@ -1174,7 +1193,7 @@ DATA SOURCE: Start with data provided in task context from previous research AND
 
 ANALYSIS FOCUS:
 1. EXPLOITATION STATUS: Extract exploitation indicators, sources, and confidence levels from shared CVE data (search for fields indicating active exploitation)
-2. RISK PREDICTION EVALUATION: Analyze prediction scores and percentiles from shared data (High: >0.7, Medium: 0.4-0.7, Low: <0.4) - look for EPSS or similar scoring
+2. RISK PREDICTION EVALUATION: Analyze prediction scores and percentiles from shared data - look for EPSS or similar scoring
 3. EXPLOIT DOCUMENTS: Filter exploit-related entries from shared document listings, assess credibility and technical depth
 4. TIMELINE CORRELATION: Map exploit availability against CVE disclosure dates using shared timestamps
 5. TECHNICAL ASSESSMENT: Categorize exploit types (PoC, weaponized, scanner) and complexity from shared document metadata
@@ -1212,7 +1231,7 @@ OUTPUT PROTOCOL:
 - Append exactly one single line at the very end: RISK_INPUTS={...} as specified in your prompt.
 
 DELIVERABLES: Exploitation status, risk prediction assessment, exploit availability analysis with recency context, concise related CVE enumeration with linkage reasons (up to 6), and (when explicitly evidenced) CVE chain relationships, plus risk assessment based on shared data.""",
-    expected_output='Exploit intelligence summary with exploitation status, risk prediction evaluation, exploit documents analysis, monitoring/telemetry timeline with earliest occurrences, conditional CVE chain analysis only when explicitly evidenced, and risk assessment based on shared database data. The last line must be a single-line RISK_INPUTS JSON object.',
+    expected_output='Exploit intelligence summary with exploitation status, risk prediction evaluation, exploit documents analysis, monitoring/telemetry timeline with earliest occurrences, conditional CVE chain analysis only when explicitly evidenced, and risk assessment based on shared database data. The last line must be a single-line RISK_INPUTS JSON object containing: {"epss_score": float_value, "epss_percentile": float_value, "exploitation_evidence": string_summary, "monitoring_data": string_summary}.',
     agent=exploit_researcher,
     context=[research_planning_task, vulnerability_research_task]
 )
@@ -1222,10 +1241,10 @@ threat_intelligence_task = Task(
 
 🚨 CRITICAL: EXTRACT CVE IDs FROM CONTEXT FIRST 🚨
 BEFORE searching, you MUST:
-1. Review vulnerability_research_task output to extract ALL CVE IDs (e.g., CVE-2025-7775, CVE-2025-7776)
-2. Search using CVE IDs, NOT bulletin IDs (bulletin IDs like CTX694938 yield poor results)
-3. Example GOOD search: "CVE-2025-7775 exploitation threat actor"
-4. Example BAD search: "CTX694938 Citrix advisory threat intelligence"
+1. Review vulnerability_research_task output to extract ALL CVE IDs
+2. Search using CVE IDs, NOT bulletin IDs (bulletin IDs yield poor results)
+3. Example GOOD search: "CVE-ID exploitation threat actor"
+4. Example BAD search: "Bulletin-ID advisory threat intelligence"
 5. If multiple CVEs present, prioritize the one with active exploitation evidence
 
 TOOL USAGE STRATEGY:
@@ -1239,7 +1258,7 @@ SEARCH OBJECTIVES (using CVE IDs):
 2. ATTACK CAMPAIGNS: Research specific campaign names/identifiers with victim intelligence
 3. TTP ANALYSIS - SPECIFIC EVIDENCE REQUIRED:
    - Search for SPECIFIC MITRE ATT&CK techniques with T-codes (e.g., T1190, T1059.001)
-   - Search for SPECIFIC exploitation steps (e.g., "CVE-2025-7775 webshell deployment")
+   - Search for SPECIFIC exploitation steps (e.g., "CVE-ID webshell deployment")
    - Search for SPECIFIC tools/malware names (e.g., "Cobalt Strike", "Mimikatz")
    - IF no specific TTPs found → Report "No specific TTP data available from sources"
    - DO NOT write vague summaries without T-codes and technique names
@@ -1276,7 +1295,7 @@ technical_exploitation_task = Task(
 
 🚨 CRITICAL ANTI-REDUNDANCY ENFORCEMENT 🚨  
 BEFORE ANY TOOL CALL: Check if this exact bulletin/CVE ID was ALREADY queried in previous tasks
-- If vulnerability_research_task output contains CTX694938 data, DO NOT call bulletin_by_id(CTX694938) again
+- If vulnerability_research_task output contains BULLETIN_ID data, DO NOT call bulletin_by_id(BULLETIN_ID) again
 - If exploit_analysis_task already fetched data for an ID, DO NOT query it again
 - ALL tool calls for IDs already in context are STRICTLY FORBIDDEN and will FAIL the task
 - Your FIRST action must be: "Reviewing context from previous tasks for existing technical data..."
@@ -1307,10 +1326,10 @@ TECHNICAL ANALYSIS OBJECTIVES:
    - Focus on documents containing PoC, exploit code, or technical write-ups
 
 3. CONDITIONAL INTERNET TECHNICAL SEARCH: Only search internet when MCP tool data lacks specific technical exploitation details
-   - EXTRACT CVE IDs from context first (e.g., CVE-2025-7775 from CTX694938 bulletin data)
+   - EXTRACT CVE IDs from context first (e.g., CVE_ID from BULLETIN_ID bulletin data)
    - Use targeted queries with CVE IDs: "[CVE-ID] exploit technical details methodology", "[CVE-ID] PoC GitHub"
-   - Example GOOD: "CVE-2025-7775 exploit PoC GitHub"
-   - Example BAD: "CTX694938 exploit technical details" (bulletin IDs yield poor results)
+   - Example GOOD: "CVE-ID exploit PoC GitHub"
+   - Example BAD: "BULLETIN_ID exploit technical details" (bulletin IDs yield poor results)
    - Look for proof-of-concept code, exploitation walkthroughs, technical write-ups not present in tool responses
    - Prioritize authoritative sources (GitHub, ExploitDB, security research blogs)
    - Focus on recent publications with technical depth not covered by MCP tools
@@ -1357,11 +1376,13 @@ OUTPUT FORMAT: Structured technical summary with clear sections for methodology,
 risk_scoring_task = Task(
     description="""CRITICAL RISK SCORING TASK: Generate the quantitative risk score by aggregating ALL RISK_INPUTS from previous tasks. This is MANDATORY and must execute.
 
+🚨 MANAGER: Assign this DIRECTLY to the risk_analyst agent. ALL required context data is already available in the task context from completed previous tasks. NO delegation or tool calls needed.
+
 DATA EXTRACTION:
-The RISK_INPUTS are embedded as the LAST LINE in each previous task's output. Your task context contains the FULL OUTPUT TEXT from all previous tasks.
+The RISK_INPUTS are embedded as the LAST LINE in each previous task's output. Your task context automatically contains the FULL OUTPUT TEXT from all previous tasks.
 
 STEP 1: PARSE PREVIOUS TASK OUTPUTS
-Look for lines starting with "RISK_INPUTS={" in the context from:
+Search for lines starting with "RISK_INPUTS={" in your context - they will be at the end of outputs from:
 - research_planning_task output (contains popularity data)
 - vulnerability_research_task output (contains exploit evidence)
 - exploit_analysis_task output (contains exploitation metrics)
@@ -1369,12 +1390,10 @@ Look for lines starting with "RISK_INPUTS={" in the context from:
 - technical_exploitation_task output (contains technical constraints)
 
 STEP 2: EXTRACT AND PARSE JSON
-For each task output, find the line "RISK_INPUTS={...}" and parse the JSON object.
+For each task output, locate the line "RISK_INPUTS={...}" and parse the JSON object. All data is in your context.
 
 STEP 3: AGGREGATE ALL RISK_INPUTS
-You MUST aggregate all available RISK_INPUTS before computing the final score.
-
-IF YOU DON'T SEE RISK_INPUTS LINES: The previous tasks' outputs are in your context - read through them to find the RISK_INPUTS lines at the end of each output.
+Aggregate all available RISK_INPUTS before computing the final score. Work with whatever data is present in the context.
 
 RISK SCORING OBJECTIVES:
 1. DATA EXTRACTION: Extract key metrics from SHARED research outputs (search flexibly for these data points):
@@ -1425,17 +1444,17 @@ RISK SCORING OBJECTIVES:
    - Apply adaptive scoring formula with context constraints
    - Calculate uncertainty metric based on evidence quality
 
-EFFICIENCY RULE: Work exclusively with previously collected intelligence in your context - NO TOOLS OR DELEGATION NEEDED.
-
 🚨 CRITICAL REQUIREMENTS 🚨
-- Use ONLY data from previous research task outputs (available in your task context)
-- Parse the context text to extract RISK_INPUTS lines from each previous task
+- ALL data needed is ALREADY in your task context from previous completed tasks
+- Simply read the context and extract RISK_INPUTS lines from each previous task output
+- Parse the context text to find lines starting with "RISK_INPUTS={"
 - NEVER invent or assume missing data points
 - If a RISK_INPUTS line is missing from a task, skip it and continue with available data
-- Apply scoring algorithm precisely as specified
+- Apply scoring algorithm precisely as specified using only the extracted data
 - Return exactly one JSON object: {"value": X.X, "uncertainty": Y.Y}
 - Ensure value is 0.0-10.0 (1 decimal) and uncertainty is 0.0-10.0 (1 decimal)
-- Lower uncertainty = higher confidence in the score""",
+- Lower uncertainty = higher confidence in the score
+- NO tools needed, NO delegation needed - just read context and compute score""",
     expected_output='JSON object with quantitative risk assessment: {"value": X.X, "uncertainty": Y.Y} where value is the 0.0-10.0 risk score and uncertainty is the 0.0-10.0 confidence metric (lower = more confident).',
     agent=risk_analyst,
     context=[research_planning_task, vulnerability_research_task, exploit_analysis_task, threat_intelligence_task, technical_exploitation_task]
@@ -1465,8 +1484,8 @@ CRITICAL REQUIREMENTS:
 - NO generic introductions like "In today's interconnected world..." or "As cyber threats continue to evolve..."
 - INSTEAD: Start directly with specific vulnerability details, CVSS scores, affected products, exploitation evidence
 - Write concrete, evidence-based analysis using actual data from research tasks
-- Example BAD: "In the ever-evolving landscape of cybersecurity, the identification and analysis of vulnerabilities in widely used products such as Citrix's NetScaler ADC and Gateway are of paramount importance."
-- Example GOOD: "CVE-2025-7775 affects Citrix NetScaler ADC and Gateway with a CVSS score of 9.8. The vulnerability enables memory overflow exploitation through IPv6 services and has been actively exploited in the wild."
+- Example BAD: "In the ever-evolving landscape of cybersecurity, the identification and analysis of vulnerabilities in widely used products are of paramount importance."
+- Example GOOD: "The vulnerability affects specific software products with a high CVSS score. The vulnerability enables specific exploitation techniques and has been actively exploited in the wild."
 
 MEMORY-ENHANCED SYNTHESIS FEATURES:
 1. PATTERN RECOGNITION: Use entity memory to identify similar vulnerabilities, threat actors, and exploitation patterns
@@ -1483,7 +1502,7 @@ ADAPTIVE ANALYSIS LOGIC:
 DATA SOURCE: Access ALL previous task outputs including vulnerability research, exploit analysis, threat intelligence, technical exploitation details, and the quantitative risk score from risk_analyst. Leverage memory context for enhanced analysis.
 
 ENHANCED SYNTHESIS REQUIREMENTS:
-1. Integrate exact technical metrics from provided context data (search for CVSS scores, CWE classifications, EPSS predictions with precise values - be flexible about field names)
+1. Integrate exact technical metrics from provided context data (search for CVSS scores, CWE classifications, EPSS predictions with precise values - be flexible about field names). EXTRACT EPSS score and percentile values from RISK_INPUTS JSON objects in previous task outputs and include them prominently in the report.
 2. Compile exploitation evidence from shared exploit analysis including monitoring/telemetry timeline and earliest occurrences
 3. Include CVE relationship analysis from shared intelligence with memory-informed insights:
    - Document related CVE relationships and connections when sources link them (co-exploitation/combined use) or explicitly describe chains
@@ -1510,10 +1529,10 @@ RECENCY EVALUATION:
 - Prioritize recent patches, advisories, and security updates in recommendations
 
 REPORT FORMAT: Flowing narrative paragraphs (NOT bullet points), 6-8 paragraphs total.
-- Opening: Vulnerability overview with key metrics (CVSS scores, CWE classifications, EPSS scores/percentiles) and exploitation status from shared data
-- Risk Assessment: Prominently feature the computed risk score (value and uncertainty) with contextual explanation of the scoring methodology and factors
+- Opening: Comprehensive vulnerability overview with ALL available metrics (CVSS scores with vector strings and severity levels, CWE classifications with consequence analysis, EPSS score/percentile numerical values with interpretation, SSVC categorization if available, exploitation status indicators) from shared vulnerability intelligence data
+- Risk Assessment: Prominently feature the computed risk score (value and uncertainty) with detailed explanation of how ALL contributing factors (CVSS, EPSS, CWE, exploitation status, technical metrics) were integrated into the final score
 - Current Status Evaluation: Explicit assessment of patch availability and information recency
-- Exploitation Analysis: EPSS score and percentile with interpretation (High: >0.7, Medium: 0.4-0.7, Low: <0.4), monitoring/telemetry timeline with earliest occurrences, exploit availability, and technical details from shared analysis
+- Exploitation Analysis: EPSS score and percentile numerical values with interpretation, monitoring/telemetry timeline with earliest occurrences, exploit availability, and technical details from shared analysis
 - Technical Exploitation Details: ONLY include if analyst provided specific methodologies/code; otherwise OMIT this section
 - Threat Intelligence & TTPs: ONLY include if analyst provided specific threat actors, MITRE T-codes (e.g., T1190), technique names, and sources; otherwise OMIT this section entirely (do not write placeholders)
 - CVE Relationship Analysis: Detailed analysis of related CVE relationships, including co-exploitation/combined use, and stepwise exploitation chains ONLY when explicitly evidenced in shared intelligence; otherwise, focus on individual CVEs without assuming chains
@@ -1527,12 +1546,12 @@ RISK SCORE INTEGRATION:
 - Use the score to prioritize remediation recommendations
 - Contextualize the uncertainty level and its implications
 
-EFFICIENCY RULE: Work exclusively with previously collected intelligence - no additional queries needed.
+🚨 MANAGER: Assign this DIRECTLY to the analyst agent. ALL required data is in the task context from completed previous tasks. NO tools or delegation needed - just synthesize the report from context.
 
-QUALITY: Every claim traceable to shared task outputs, no speculation, focus on actionable intelligence, risk score and EPSS metrics prominently featured.
+QUALITY: Every claim traceable to shared task outputs, no speculation, focus on actionable intelligence, risk score and EPSS metrics with specific numerical values prominently featured.
 
 FINAL OUTPUT: This is the END of the analysis pipeline. Do NOT append RISK_INPUTS. Produce only the comprehensive narrative report.""",
-    expected_output='FINAL COMPREHENSIVE VULNERABILITY ANALYSIS REPORT: Write 5-8 flowing narrative paragraphs (NO bullet points) that integrate ALL research findings. MUST include: (1) Opening vulnerability overview with key metrics (CVSS, CWE, EPSS score/percentile), (2) Prominent risk score integration with explanation, (3) Current status and recency evaluation, (4) Exploitation analysis with EPSS interpretation and timeline, (5) Technical exploitation details ONLY if specific data provided, (6) Threat intelligence & TTPs ONLY if specific MITRE T-codes and techniques provided, (7) CVE relationship analysis when evidenced, (8) Remediation guidance. OMIT sections without specific evidence - do not write placeholders. The quantitative risk score (value and uncertainty) and EPSS metrics must be prominently featured and explained.',
+    expected_output='FINAL COMPREHENSIVE VULNERABILITY ANALYSIS REPORT: Write 5-8 flowing narrative paragraphs (NO bullet points) that integrate ALL research findings. MUST include and prominently feature ALL available vulnerability intelligence metrics: (1) Opening vulnerability overview with comprehensive metrics (CVSS scores with vector strings and severity levels, CWE classifications with consequence analysis, EPSS score/percentile numerical values with interpretation, SSVC categorization if available, exploitation status), (2) Prominent risk score integration with explanation of all contributing factors, (3) Current status and recency evaluation, (4) Exploitation analysis with EPSS score and percentile numerical values with interpretation and detailed timeline, (5) Technical exploitation details ONLY if specific data provided, (6) Threat intelligence & TTPs ONLY if specific MITRE T-codes and techniques provided, (7) CVE relationship analysis when evidenced, (8) Remediation guidance. OMIT sections without specific evidence - do not write placeholders. ALL vulnerability intelligence metrics (CVSS, CWE, EPSS, SSVC, exploitation status) must be prominently featured and explained with their specific numerical values.',
     agent=analyst,
     context=[research_planning_task, vulnerability_research_task, exploit_analysis_task, threat_intelligence_task, technical_exploitation_task, risk_scoring_task]
 )
@@ -1559,16 +1578,84 @@ try:
     short_term_memory = ShortTermMemory()
     entity_memory = EntityMemory()
 
-    print("✓ Selective memory configuration: Short-term and Entity enabled, Long-term disabled")
+    print("✓ Memory configuration: Short-term and Entity enabled, Long-term disabled")
+    print("   Short-term memory will be reset between runs to prevent CVE contamination")
+    print("   Entity memory will be preserved for pattern recognition across analyses")
 
 except Exception as e:
     print(f"⚠️ Could not configure selective memory: {e}")
     short_term_memory = None
     entity_memory = None
 
+# Function to reset short-term memory while preserving entity memory
+def reset_short_term_memory():
+    """Reset only short-term memory to prevent CVE-specific context contamination.
+    
+    Entity memory is preserved to maintain learned patterns about:
+    - Threat actor behaviors
+    - Exploitation techniques
+    - Product vulnerability patterns
+    - Security research methodologies
+    """
+    global short_term_memory
+    try:
+        if short_term_memory:
+            short_term_memory.reset()
+            print("🔄 Short-term memory reset (entity memory preserved for pattern learning)")
+    except Exception as e:
+        print(f"⚠️ Could not reset short-term memory: {e}")
+
+# Function to reset all memory systems (for complete fresh start)
+def reset_all_memory():
+    """Reset all memory systems for complete fresh analysis."""
+    global short_term_memory, entity_memory
+    try:
+        if short_term_memory:
+            short_term_memory.reset()
+        if entity_memory:
+            entity_memory.reset()
+        print("🔄 All memory systems reset (complete fresh start)")
+    except Exception as e:
+        print(f"⚠️ Could not reset memory systems: {e}")
+
 # Function to create a fresh crew for each request (prevents state accumulation issues)
-def create_crew():
-    """Create a new Crew instance to avoid state accumulation across requests."""
+def create_crew(auto_reset_short_term=True):
+    """Create a new Crew instance to avoid state accumulation across requests.
+
+    Args:
+        auto_reset_short_term (bool): Automatically reset short-term memory between runs (default: True)
+                                      Entity memory is always preserved for pattern learning
+    """
+    # Check memory configuration via environment variables
+    disable_memory = os.getenv("DISABLE_MEMORY", "false").lower() == "true"
+    reset_all = os.getenv("RESET_ALL_MEMORY", "false").lower() == "true"
+    preserve_short_term = os.getenv("PRESERVE_SHORT_TERM", "false").lower() == "true"
+
+    # Handle memory reset logic
+    if reset_all:
+        # Complete reset - use for debugging or when entity memory is causing issues
+        reset_all_memory()
+    elif auto_reset_short_term and not preserve_short_term:
+        # Default behavior: reset short-term but preserve entity memory
+        # This prevents CVE-specific contamination while keeping learned patterns
+        reset_short_term_memory()
+
+    # Determine memory configuration
+    if disable_memory:
+        print("🧠 All memory systems disabled via DISABLE_MEMORY=true")
+        crew_memory = False
+        crew_short_term = None
+        crew_entity = None
+    else:
+        crew_memory = False  # Use explicit memory config
+        crew_short_term = short_term_memory
+        crew_entity = entity_memory
+        print("🧠 Memory active: Short-term (reset), Entity (preserved)")
+
+    # Export reset functions for external use
+    create_crew.reset_short_term = reset_short_term_memory
+    create_crew.reset_all = reset_all_memory
+
     return Crew(
         name="VM-Agent",
         tasks=[
@@ -1601,9 +1688,9 @@ def create_crew():
         # Long-term memory: Disabled to prevent JSON parsing errors
         # Short-term: Enabled for context within current execution
         # Entity: Enabled to track CVEs, threat actors, products
-        memory=False,  # Disable automatic memory setup
-        short_term_memory=short_term_memory,
-        entity_memory=entity_memory,
+        memory=crew_memory,  # Dynamic memory setup
+        short_term_memory=crew_short_term,
+        entity_memory=crew_entity,
         long_term_memory=None,  # Explicitly disable long-term memory
         embedder=MEMORY_EMBEDDER_CONFIG
     )

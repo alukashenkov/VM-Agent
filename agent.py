@@ -238,7 +238,9 @@ def run_crew_execution_with_logging(natural_prompt: str, console_logger, file_lo
 
     try:
         # Create a fresh crew for this request to avoid state accumulation issues
-        base_crew = create_crew()
+        # By default, short-term memory is reset to prevent CVE contamination
+        # Entity memory is preserved to maintain learned patterns across analyses
+        base_crew = create_crew(auto_reset_short_term=True)
         
         # Log crew configuration (file only)
         log_configuration_section(log_filename, base_crew, natural_prompt)

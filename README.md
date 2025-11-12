@@ -255,7 +255,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
 
 ### Components
 
-- **agents_definitions.py** (1,612 lines)
+- **agents_definitions.py** (1,700 lines)
   - All 7 agent definitions with prompts and LLM configurations
   - 7 task definitions with detailed instructions
   - MCP tool discovery and initialization using `MCPServerAdapter`
@@ -264,7 +264,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - Global MCP adapter for persistent connections
   - Crew setup with sequential processing
 
-- **agent.py** (401 lines)
+- **agent.py** (404 lines)
   - Core execution wrapper and orchestration
   - Comprehensive logging system (console + file)
   - Configuration capture and serialization
@@ -282,13 +282,13 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - Health check endpoint
   - API endpoints for analysis requests
 
-- **run_local.py** (122 lines)
+- **run_local.py** (123 lines)
   - Local development runner with auto browser launch
   - Environment setup and validation
   - Web server initialization and monitoring
   - Automatic browser opening on startup
 
-- **templates/index.html** (577 lines)
+- **templates/index.html** (578 lines)
   - Modern, responsive web UI
   - Resizable split view (results + logs)
   - Real-time SSE log streaming
@@ -296,9 +296,8 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - Loading states and error handling
 
 - **requirements.txt**
-  - `crewai>=1.4.0` - CrewAI 1.4 framework with advanced planning, memory, and reasoning features
+  - `crewai>=1.4.0` - CrewAI 1.4 framework with advanced planning, memory, and reasoning features (includes litellm as dependency)
   - `crewai-tools[mcp]` - MCP integration for CrewAI
-  - `litellm` - LLM abstraction layer
   - `python-dotenv` - Environment variable management
   - `flask` - Web framework
   - `markdown` - Markdown rendering
@@ -653,7 +652,7 @@ DEBUG=True python run_local.py
 ### Anti-Hallucination Controls
 
 - **CVE Conflation Prevention**: Explicit warnings in all agent prompts to never conflate different CVE IDs
-- **Critical Protection**: NEVER confuse CVE-2025-44228 with CVE-2021-44228 (Log4Shell)
+- **Critical Protection**: NEVER confuse similar-looking CVE IDs
 - **Reserved CVE Handling**: Agents explicitly report "reserved candidate" status without inventing details
 - **Evidence-Only Rules**: Strict requirements to stick to tool outputs without speculation
 - **No Assumption Policy**: Agents prohibited from inferring missing vulnerability details
