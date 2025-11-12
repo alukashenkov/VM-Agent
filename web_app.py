@@ -125,28 +125,33 @@ def index():
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     """API endpoint to run vulnerability analysis."""
+    data = request.get_json()
+    if not data or 'prompt' not in data:
+        return jsonify({'error': 'Missing prompt parameter'}), 400
+
+    prompt = data['prompt'].strip()
+    if not prompt:
+        return jsonify({'error': 'Prompt cannot be empty'}), 400
+
+    session_id = data.get('session_id')
+
+    print(f"🔍 Starting analysis for prompt: {prompt}")
+
+    # Lazy-load agent functions only when needed (first request)
+    agent_funcs = _get_agent_functions()
+    setup_logging = agent_funcs['setup_logging']
+    run_crew_execution_with_logging = agent_funcs['run_crew_execution_with_logging']
+
+    # Setup logging for the analysis
+    console_logger, file_logger, log_filename = setup_logging()
+
+    # Track if analysis succeeded
+    analysis_success = False
+    result = None
+    analysis_error = None
+
+    # Run the analysis using the direct agent function with web context
     try:
-        data = request.get_json()
-        if not data or 'prompt' not in data:
-            return jsonify({'error': 'Missing prompt parameter'}), 400
-        
-        prompt = data['prompt'].strip()
-        if not prompt:
-            return jsonify({'error': 'Prompt cannot be empty'}), 400
-
-        session_id = data.get('session_id')
-        
-        print(f"🔍 Starting analysis for prompt: {prompt}")
-
-        # Lazy-load agent functions only when needed (first request)
-        agent_funcs = _get_agent_functions()
-        setup_logging = agent_funcs['setup_logging']
-        run_crew_execution_with_logging = agent_funcs['run_crew_execution_with_logging']
-
-        # Setup logging for the analysis
-        console_logger, file_logger, log_filename = setup_logging()
-
-        # Run the analysis using the direct agent function with web context
         if session_id and session_id in SESSION_QUEUES:
             # Per-request Tee for stdout/stderr to also push to SSE queue
             class TeeStream:
@@ -181,6 +186,10 @@ def analyze():
                 _sys.stdout = TeeStream(original_stdout, session_id)
                 _sys.stderr = TeeStream(original_stderr, session_id)
                 result = run_crew_execution_with_logging(prompt, console_logger, file_logger, execution_context="web")
+                analysis_success = True
+            except Exception as e:
+                analysis_error = e
+                analysis_success = False
             finally:
                 try:
                     _sys.stdout.flush()
@@ -191,48 +200,61 @@ def analyze():
                 _sys.stderr = original_stderr
                 _mark_session_done(session_id)
         else:
-            result = run_crew_execution_with_logging(prompt, console_logger, file_logger, execution_context="web")
+            try:
+                result = run_crew_execution_with_logging(prompt, console_logger, file_logger, execution_context="web")
+                analysis_success = True
+            except Exception as e:
+                analysis_error = e
+                analysis_success = False
 
-        # Convert CrewOutput to string for JSON serialization
-        result_str = str(result) if result else "No result generated"
-        
+    except Exception as outer_error:
+        # Handle any outer exceptions
+        analysis_error = outer_error
+        analysis_success = False
 
-        
-        # Convert markdown to HTML for proper rendering
-        try:
-            # Configure markdown with extensions for better formatting
-            md = markdown.Markdown(extensions=[
-                'markdown.extensions.fenced_code',
-                'markdown.extensions.tables',
-                'markdown.extensions.codehilite',
-                'markdown.extensions.nl2br'
-            ])
-            result_html = md.convert(result_str)
-        except Exception as e:
-            print(f"⚠️  Markdown conversion failed: {e}")
-            # Fallback to plain text if markdown conversion fails
-            result_html = result_str.replace('\n', '<br>')
-        
-        # Prepare response
-        response = {
-            'success': True,
-            'result': result_str,  # Keep original markdown for debugging
-            'result_html': result_html,  # Add HTML version for rendering
-            'log_file': log_filename
-        }
-        
-        print(f"✅ Analysis completed successfully")
-        return jsonify(response)
-        
-    except Exception as e:
-        print(f"❌ Error during analysis: {e}")
-        
-        # Error handling without real-time updates
-        
+    # Now prepare the response based on success/failure
+    if not analysis_success:
+        error_msg = f"❌ Analysis failed: {str(analysis_error)}"
+        print(error_msg)
+
+        # Return proper error response
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': str(analysis_error),
+            'error_type': type(analysis_error).__name__,
+            'log_file': log_filename
         }), 500
+
+    # Convert CrewOutput to string for JSON serialization
+    result_str = str(result) if result else "No result generated"
+        
+
+
+    # Convert markdown to HTML for proper rendering
+    try:
+        # Configure markdown with extensions for better formatting
+        md = markdown.Markdown(extensions=[
+            'markdown.extensions.fenced_code',
+            'markdown.extensions.tables',
+            'markdown.extensions.codehilite',
+            'markdown.extensions.nl2br'
+        ])
+        result_html = md.convert(result_str)
+    except Exception as e:
+        print(f"⚠️  Markdown conversion failed: {e}")
+        # Fallback to plain text if markdown conversion fails
+        result_html = result_str.replace('\n', '<br>')
+
+    # Prepare response
+    response = {
+        'success': True,
+        'result': result_str,  # Keep original markdown for debugging
+        'result_html': result_html,  # Add HTML version for rendering
+        'log_file': log_filename
+    }
+
+    print(f"✅ Analysis completed successfully")
+    return jsonify(response)
 
 @app.route('/api/health')
 def health():

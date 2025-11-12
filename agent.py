@@ -26,7 +26,7 @@ os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"  # Additional telemetry disable for OpenTelemetry
 
 # Import agent definitions, tools, and tasks from separate module
-from agents_definitions import base_crew
+from agents_definitions import create_crew
 
 # Load environment variables from .env file
 load_dotenv()
@@ -155,7 +155,7 @@ def get_crew_configuration(crew: Crew, prompt: str) -> dict:
         "tasks": [],
     }
 
-    # Extract agents and their tools from both crew agents and task assignments
+    # Extract agents from task assignments (hierarchical mode doesn't use explicit agents list)
     agents_dict = {}
 
     # Function to get LLM configuration for an agent
@@ -178,25 +178,7 @@ def get_crew_configuration(crew: Crew, prompt: str) -> dict:
             return config
         return None
 
-    # First, extract from crew's explicit agents (now that we've added them)
-    if hasattr(crew, 'agents') and crew.agents:
-        for agent in crew.agents:
-            agent_key = f"{agent.role}_{agent.goal[:20]}..."  # Create unique key for deduplication
-            if agent_key not in agents_dict:
-                agent_data = {
-                    "role": agent.role,
-                    "goal": agent.goal,
-                    "backstory": agent.backstory,
-                    "tools": [{"name": tool.name, "description": tool.description} for tool in agent.tools] if hasattr(agent, 'tools') and agent.tools else [],
-                    "allow_delegation": agent.allow_delegation,
-                    "verbose": agent.verbose,
-                }
-                llm_config = get_agent_llm_config(agent)
-                if llm_config:
-                    agent_data["llm_configuration"] = llm_config
-                agents_dict[agent_key] = agent_data
-
-    # Also extract from tasks (for any agents that might be task-specific)
+    # Extract agents from tasks (primary method, works for both hierarchical and sequential)
     for task in crew.tasks:
         if task.agent:
             agent = task.agent
@@ -255,6 +237,9 @@ def run_crew_execution_with_logging(natural_prompt: str, console_logger, file_lo
     result = None  # Initialize result to avoid UnboundLocalError
 
     try:
+        # Create a fresh crew for this request to avoid state accumulation issues
+        base_crew = create_crew()
+        
         # Log crew configuration (file only)
         log_configuration_section(log_filename, base_crew, natural_prompt)
 
@@ -298,7 +283,32 @@ def run_crew_execution_with_logging(natural_prompt: str, console_logger, file_lo
                 sys.stderr = TeeStream(original_stderr, log_filename)
 
                 # Execute crew - output goes to both console and file in real-time
-                result = base_crew.kickoff(inputs=inputs)
+                try:
+                    result = base_crew.kickoff(inputs=inputs)
+                except Exception as crew_error:
+                    # Handle CrewAI execution failures gracefully
+                    error_msg = f"❌ Crew execution failed: {str(crew_error)}"
+                    console_logger.error(error_msg)
+                    file_logger.error(f"Crew execution error: {str(crew_error)}")
+
+                    # Check if it's a planning-related error
+                    if "PlannerTaskPydanticOutput" in str(crew_error) or "planning" in str(crew_error).lower():
+                        console_logger.warning("⚠️  Planning system failed - falling back to direct execution")
+                        file_logger.warning("Planning system failed - falling back to direct execution")
+
+                        # Try to disable planning and retry
+                        try:
+                            console_logger.info("🔄 Retrying with planning disabled...")
+                            base_crew.planning = False
+                            result = base_crew.kickoff(inputs=inputs)
+                            console_logger.info("✅ Retry successful")
+                        except Exception as retry_error:
+                            error_msg = f"❌ Retry also failed: {str(retry_error)}"
+                            console_logger.error(error_msg)
+                            file_logger.error(f"Retry failed: {str(retry_error)}")
+                            raise crew_error  # Raise original error
+                    else:
+                        raise crew_error  # Re-raise non-planning errors
 
             finally:
                 # Restore original streams
@@ -313,7 +323,32 @@ def run_crew_execution_with_logging(natural_prompt: str, console_logger, file_lo
             console_logger.info("⏳ Starting crew execution...")
 
             # Execute crew - let CrewAI output naturally, use logging for tracking
-            result = base_crew.kickoff(inputs=inputs)
+            try:
+                result = base_crew.kickoff(inputs=inputs)
+            except Exception as crew_error:
+                # Handle CrewAI execution failures gracefully
+                error_msg = f"❌ Crew execution failed: {str(crew_error)}"
+                console_logger.error(error_msg)
+                file_logger.error(f"Crew execution error: {str(crew_error)}")
+
+                # Check if it's a planning-related error
+                if "PlannerTaskPydanticOutput" in str(crew_error) or "planning" in str(crew_error).lower():
+                    console_logger.warning("⚠️  Planning system failed - falling back to direct execution")
+                    file_logger.warning("Planning system failed - falling back to direct execution")
+
+                    # Try to disable planning and retry
+                    try:
+                        console_logger.info("🔄 Retrying with planning disabled...")
+                        base_crew.planning = False
+                        result = base_crew.kickoff(inputs=inputs)
+                        console_logger.info("✅ Retry successful")
+                    except Exception as retry_error:
+                        error_msg = f"❌ Retry also failed: {str(retry_error)}"
+                        console_logger.error(error_msg)
+                        file_logger.error(f"Retry failed: {str(retry_error)}")
+                        raise crew_error  # Raise original error
+                else:
+                    raise crew_error  # Re-raise non-planning errors
 
             # Log completion
             console_logger.info("✅ Crew execution completed")

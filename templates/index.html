@@ -92,6 +92,9 @@
             border: 1px solid #ddd;
             border-radius: 5px;
             font-family: inherit;
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.5;
             resize: vertical;
         }
 
@@ -366,15 +369,6 @@
 
             <hr class="section-divider">
 
-            <div class="examples">
-                <h3>📋 Default Prompts:</h3>
-                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-53770')">Analyze CVE-2025-53770</div>
-                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-31278')">Analyze CVE-2025-31278</div>
-                <div class="example-item" onclick="setPrompt('Analyze CVE-2025-43236')">Analyze CVE-2025-43236</div>
-            </div>
-
-            <hr class="section-divider">
-
             <form id="analysisForm">
                 <div class="form-group">
                     <label for="prompt">VM-Agent Prompt:</label>
@@ -388,8 +382,6 @@
             <div id="loading" class="loading" style="display: none;">
                 <p>🔄 Analyzing... This may take a few minutes.</p>
             </div>
-
-
 
             <div id="result"></div>
         </div>

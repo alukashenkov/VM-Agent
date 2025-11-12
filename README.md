@@ -4,7 +4,7 @@ An advanced multi-agent vulnerability analysis system that leverages AI agents t
 
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 
-![Orchestration](https://img.shields.io/badge/Orchestration-CrewAI%20Latest-673ab7)
+![Orchestration](https://img.shields.io/badge/Orchestration-CrewAI%201.4+-673ab7)
 ![MCP Framework](https://img.shields.io/badge/MCP-FastMCP%202.0-ff6f00)
 ![Model](https://img.shields.io/badge/Model-gpt--4o-00bcd4)
 ![LLM Engine](https://img.shields.io/badge/LLM-LiteLLM-9c27b0)
@@ -26,11 +26,19 @@ An advanced multi-agent vulnerability analysis system that leverages AI agents t
 ### Core Capabilities
 
 - **Multi-Agent Analysis**: 7 specialized AI agents for comprehensive vulnerability research with sequential orchestration
-- **Latest CrewAI Framework**: Built on CrewAI's latest capabilities including:
+- **Latest CrewAI 1.4 Framework**: Built on CrewAI 1.4's latest capabilities including:
   - Native MCPServerAdapter for seamless MCP integration
   - Agent caching and delegation for efficient collaboration
   - LiteLLM integration for flexible model selection
-  - Advanced task orchestration with sequential processing
+  - **Enhanced Planning & Reasoning System**: Advanced orchestration with hierarchical coordination
+  - **Intelligent Memory System**: Fully functional memory with patched long-term storage
+    - Short-term memory: Context within current execution
+    - Entity memory: Tracks CVEs, threat actors, products
+    - Long-term memory: Patched to handle JSON parsing (markdown-wrapped content)
+  - **Reasoning Checkpoints**: Validation steps throughout the analysis workflow
+  - **Adaptive Execution**: Memory-informed planning and context-aware research
+  - **Hierarchical Process**: Manager LLM coordinates multi-agent collaboration
+  - **Generic Language Avoidance**: Prevents generic cybersecurity platitudes in final reports
   
 ### FastMCP 2.0 Framework Support
 
@@ -103,29 +111,29 @@ An advanced multi-agent vulnerability analysis system that leverages AI agents t
 | `OPENAI_MODEL` | OpenAI model to use | `gpt-4o` |
 | `SERPER_API_KEY` | Your Serper Search API key | Optional (enables web search) |
 | `DEBUG` | Enable detailed logging | `False` |
-| `VULNERS_MCP_URL` | Full MCP server endpoint URL | `http://localhost:8000/mcp` |
+| `VULN_INTEL_MCP_URL` | Full MCP server endpoint URL | `http://localhost:8000/mcp` |
 
 **MCP Server Configuration (FastMCP 2.0):**
 
-Set `VULNERS_MCP_URL` to your MCP server's full endpoint URL (include the endpoint path):
+Set `VULN_INTEL_MCP_URL` to your MCP server's full endpoint URL (include the endpoint path):
 
 ```bash
-# LA-Vulners-MCP (FastMCP 2.0 with streamable-http transport)
+# Vulnerability Intelligence MCP Server (FastMCP 2.0 with streamable-http transport)
 # Standard endpoint:
-VULNERS_MCP_URL=http://localhost:8000/mcp
+VULN_INTEL_MCP_URL=http://localhost:8000/mcp
 
 # FastMCP 2.0 SSE endpoint (recommended):
-VULNERS_MCP_URL=http://localhost:8000/sse
+VULN_INTEL_MCP_URL=http://localhost:8000/sse
 
 # Remote MCP server
-VULNERS_MCP_URL=http://your-server.com:8000/mcp
+VULN_INTEL_MCP_URL=http://your-server.com:8000/mcp
 ```
 
 **Switching Between MCP Servers:**
 
 VM-Agent uses CrewAI's native `MCPServerAdapter` with **FastMCP 2.0 Framework** support for seamless server switching:
 
-1. Update the `VULNERS_MCP_URL` in your `.env` file
+1. Update the `VULN_INTEL_MCP_URL` in your `.env` file
 2. Restart VM-Agent
 3. Agents will **automatically discover** all tools from the new MCP server
 4. No code changes required - tools use schemas provided by the MCP server
@@ -166,13 +174,15 @@ VM-Agent uses CrewAI's native `MCPServerAdapter` with **FastMCP 2.0 Framework** 
 
 VM-Agent employs a sophisticated multi-agent architecture with **7 specialized agents** working in sequence, powered by the latest CrewAI framework capabilities:
 
-1. **Research Strategy Planner** (`temperature: 0.1`)
-   - Analyzes vulnerability research requests and creates optimized investigation strategies
-   - Prioritizes Vulners database queries when identifiers are present
-   - Plans internet discovery workflows for "latest/recent" vulnerability research
-   - Ensures efficient resource allocation and systematic research methodology
-   - **Tools**: None (strategic planning only)
-   - **Delegation**: Disabled (pure planning role)
+1. **Research Strategy Planner** (`temperature: 0.1`) - *Enhanced Planning & Reasoning*
+   - **CrewAI 1.4 Advanced Planning**: Creates intelligent, adaptive research strategies with reasoning checkpoints
+   - **Memory-Informed Planning**: Leverages entity memory to avoid repeating research patterns
+   - **Intelligent Adaptation**: Adapts strategy based on similar past requests and outcomes
+   - **Reasoning Checkpoints**: Validates research approaches against available data sources
+   - **Resource Optimization**: Ensures efficient tool usage and minimizes redundant operations
+   - **Hierarchical Coordination**: Plans multi-agent delegation for complex analyses
+   - **Tools**: None (pure strategic planning role)
+   - **Delegation**: Disabled (coordination via hierarchical process)
 
 2. **Senior Vulnerability Researcher** (`temperature: 0.2`)
    - Executes research plans with comprehensive vulnerability intelligence gathering
@@ -223,12 +233,14 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
    - **Caching**: Enabled
    - **Output**: `{"value": X.X, "uncertainty": Y.Y}`
 
-7. **Principal Security Analyst** (`temperature: 0.3`)
-   - Synthesizes all research findings into comprehensive narrative reports
-   - Integrates technical metrics, exploitation analysis, and threat intelligence
-   - Features quantitative risk scores with detailed justification
-   - Provides actionable remediation guidance prioritized by risk level
-   - Writes in professional, flowing narrative paragraphs (not bullet points)
+7. **Principal Security Analyst** (`temperature: 0.3`) - *Memory-Enhanced Synthesis*
+   - **CrewAI 1.4 Memory-Enhanced Analysis**: Leverages historical patterns and entity memory for superior insights
+   - **Pattern Recognition**: Uses entity memory to identify similar vulnerabilities and threat actors
+   - **Historical Context**: Compares current findings with past analyses of related technologies
+   - **Trend Analysis**: Identifies emerging patterns in threat actor behavior and exploitation techniques
+   - **Intelligent Synthesis**: Integrates technical metrics, exploitation analysis, and threat intelligence with memory context
+   - **Adaptive Reporting**: Adjusts report depth based on vulnerability severity and historical impact
+   - **Quantitative Risk Integration**: Features risk scores with historical precedent analysis
    - **Tools**: None (synthesis only)
    - **Delegation**: Enabled (can query other agents)
    - **Caching**: Enabled
@@ -243,7 +255,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
 
 ### Components
 
-- **agents_definitions.py** (1,177 lines)
+- **agents_definitions.py** (1,612 lines)
   - All 7 agent definitions with prompts and LLM configurations
   - 7 task definitions with detailed instructions
   - MCP tool discovery and initialization using `MCPServerAdapter`
@@ -252,7 +264,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - Global MCP adapter for persistent connections
   - Crew setup with sequential processing
 
-- **agent.py** (367 lines)
+- **agent.py** (401 lines)
   - Core execution wrapper and orchestration
   - Comprehensive logging system (console + file)
   - Configuration capture and serialization
@@ -261,7 +273,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - ANSI escape sequence cleaning for log files
   - Execution context handling (console vs. web)
 
-- **web_app.py** (257 lines)
+- **web_app.py** (278 lines)
   - Flask web interface with lazy agent loading
   - Server-Sent Events (SSE) log streaming
   - Session management with UUID tracking
@@ -270,13 +282,13 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - Health check endpoint
   - API endpoints for analysis requests
 
-- **run_local.py** (144 lines)
+- **run_local.py** (122 lines)
   - Local development runner with auto browser launch
   - Environment setup and validation
   - Web server initialization and monitoring
   - Automatic browser opening on startup
 
-- **templates/index.html**
+- **templates/index.html** (577 lines)
   - Modern, responsive web UI
   - Resizable split view (results + logs)
   - Real-time SSE log streaming
@@ -284,7 +296,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
   - Loading states and error handling
 
 - **requirements.txt**
-  - `crewai` - Latest CrewAI framework
+  - `crewai>=1.4.0` - CrewAI 1.4 framework with advanced planning, memory, and reasoning features
   - `crewai-tools[mcp]` - MCP integration for CrewAI
   - `litellm` - LLM abstraction layer
   - `python-dotenv` - Environment variable management
@@ -296,7 +308,7 @@ VM-Agent employs a sophisticated multi-agent architecture with **7 specialized a
 
 ### Technical Stack
 
-- **Orchestration**: CrewAI (latest version) with sequential processing
+- **Orchestration**: CrewAI 1.4+ with hierarchical coordination and advanced planning
 - **MCP Integration**: FastMCP 2.0 Framework via `crewai-tools[mcp]` MCPServerAdapter
 - **LLM Engine**: LiteLLM for flexible model support (OpenAI, Anthropic, etc.)
 - **Web Framework**: Flask with Server-Sent Events (SSE) for real-time streaming
@@ -342,7 +354,7 @@ def get_mcp_tools():
 
 1. **Initialization** (Module Load Time)
    - `get_mcp_tools()` called when `agents_definitions.py` is imported
-   - Creates `MCPServerAdapter` with server URL from `VULNERS_MCP_URL`
+   - Creates `MCPServerAdapter` with server URL from `VULN_INTEL_MCP_URL`
    - Configures `streamable-http` transport protocol
    - Sets 30-second connection timeout
 
@@ -511,7 +523,7 @@ VM-Agent implements a sophisticated dual-stream logging system for comprehensive
    **Expected**: JSON response with list of available tools
 
    **If connection fails**:
-   - Verify `VULNERS_MCP_URL` in `.env` file
+   - Verify `VULN_INTEL_MCP_URL` in `.env` file
    - Ensure MCP server is running (`http://localhost:8000/mcp`)
    - Check firewall settings
    - For FastMCP 2.0: Try `/sse` endpoint if `/mcp` fails
@@ -533,11 +545,11 @@ VM-Agent implements a sophisticated dual-stream logging system for comprehensive
 4. **CrewAI & MCP Integration**:
 
    ```bash
-   # Verify installations
+   # Verify CrewAI 1.4+ installation
    pip list | grep -E "crewai|litellm"
 
-   # Expected:
-   # crewai              <version>
+   # Expected (CrewAI 1.4+ required):
+   # crewai              1.4.x
    # crewai-tools        <version>
    # litellm             <version>
    ```
