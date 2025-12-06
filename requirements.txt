@@ -4,3 +4,4 @@ python-dotenv
 flask
 markdown
 Pygments
+werkzeug>=3.1.4 # not directly required, pinned by Snyk to avoid a vulnerability
